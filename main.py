@@ -9,6 +9,9 @@ from flask_cors import CORS
 import swisseph as swe
 from datetime import datetime, timezone
 import math
+import os
+import json
+import urllib.request
 
 app = Flask(__name__)
 CORS(app)  # Allow requests from your website
@@ -340,6 +343,92 @@ def calculate_chart():
         }
 
         return jsonify(response)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/reading', methods=['POST'])
+def generate_reading():
+    """
+    POST /reading
+    Body: { "name": "...", "lagna": "...", "rashi": "...", "nakshatra": "...",
+            "pada": 1, "dashaLord": "...", "today": "...", "focus": "..." }
+    Returns: AI-generated reading JSON (today, love, career, health, finance, action)
+    Calls Claude API server-side — avoids browser CORS issues and keeps API key secret.
+    """
+    try:
+        data = request.get_json()
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+
+        if not api_key:
+            return jsonify({"error": "Server not configured: missing ANTHROPIC_API_KEY"}), 500
+
+        focus_labels = {
+            'general': 'overall life',
+            'career': 'career and purpose',
+            'relationships': 'love and relationships',
+            'health': 'health and wellbeing',
+            'finances': 'finances and abundance'
+        }
+        focus_label = focus_labels.get(data.get('focus', 'general'), 'overall life')
+
+        prompt = f"""You are Vyom AI — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
+
+Generate a personalised Vedic astrology reading for {data.get('name', 'Seeker')}.
+
+Their Vedic chart details:
+- Lagna (Ascendant): {data.get('lagna')}
+- Moon Sign (Rashi): {data.get('rashi')}
+- Nakshatra: {data.get('nakshatra')} (Pada {data.get('pada')})
+- Current Mahadasha: {data.get('dashaLord')}
+- Today's date: {data.get('today')}
+- Focus area they requested: {focus_label}
+
+Write the reading in this EXACT JSON format (respond with JSON only, no markdown, no backticks):
+{{
+  "today": "A 3-4 sentence insight about today specifically. Mention the Mahadasha lord's influence. Warm, personal, specific.",
+  "love": "2-3 sentences about relationships this week. Specific and actionable.",
+  "career": "2-3 sentences about work and purpose this week.",
+  "health": "2-3 sentences about energy and physical wellbeing.",
+  "finance": "2-3 sentences about money and material matters.",
+  "action": "One clear, specific, poetic action they should take today. Make it beautiful and doable. No more than 2 sentences."
+}}
+
+Tone rules:
+- Never say "the stars say" or "the planets indicate" — just speak directly
+- No jargon like "8th house" or "natal chart" — speak in plain human language
+- Be specific to their Lagna and Rashi — not generic
+- Sound like a wise elder who genuinely cares, not a fortune cookie
+- Weave in the {data.get('dashaLord')} Mahadasha energy naturally"""
+
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1000,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode('utf-8')
+
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01"
+            },
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+
+        raw_text = "".join(
+            block.get("text", "") for block in result.get("content", [])
+        )
+        clean = raw_text.replace("```json", "").replace("```", "").strip()
+        reading = json.loads(clean)
+
+        return jsonify(reading)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
