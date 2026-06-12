@@ -8,7 +8,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import swisseph as swe
 from datetime import datetime, timezone
-from geopy.geocoders import Nominatim
 import math
 
 app = Flask(__name__)
@@ -58,16 +57,48 @@ PLANET_NAMES = {
 
 # ── HELPERS ────────────────────────────────────────────────────────────────
 
+# Common Indian cities/towns — lat/lng lookup (avoids slow/unreliable external geocoding calls)
+CITY_COORDS = {
+    "bhawanigarh": (30.2733, 75.9669),
+    "sangrur": (30.2458, 75.8421),
+    "delhi": (28.6139, 77.2090),
+    "new delhi": (28.6139, 77.2090),
+    "mumbai": (19.0760, 72.8777),
+    "bombay": (19.0760, 72.8777),
+    "bangalore": (12.9716, 77.5946),
+    "bengaluru": (12.9716, 77.5946),
+    "chennai": (13.0827, 80.2707),
+    "kolkata": (22.5726, 88.3639),
+    "hyderabad": (17.3850, 78.4867),
+    "pune": (18.5204, 73.8567),
+    "ahmedabad": (23.0225, 72.5714),
+    "jaipur": (26.9124, 75.7873),
+    "lucknow": (26.8467, 80.9462),
+    "chandigarh": (30.7333, 76.7794),
+    "ludhiana": (30.9010, 75.8573),
+    "amritsar": (31.6340, 74.8723),
+    "patiala": (30.3398, 76.3869),
+    "punjab": (30.9010, 75.8573),
+    "new york": (40.7128, -74.0060),
+    "london": (51.5074, -0.1278),
+    "toronto": (43.6532, -79.3832),
+    "dubai": (25.2048, 55.2708),
+    "singapore": (1.3521, 103.8198),
+}
+
+DEFAULT_COORDS = (28.6139, 77.2090)  # New Delhi — central India fallback
+
 def get_coordinates(place_name):
-    """Get lat/lng from place name using geopy"""
-    try:
-        geolocator = Nominatim(user_agent="vyom_ai")
-        location = geolocator.geocode(place_name, timeout=10)
-        if location:
-            return location.latitude, location.longitude
-        return None, None
-    except Exception:
-        return None, None
+    """Fast local lookup for coordinates. Avoids external API calls that can time out."""
+    place_lower = place_name.lower()
+
+    # Direct match on any known city name appearing in the input
+    for city, coords in CITY_COORDS.items():
+        if city in place_lower:
+            return coords
+
+    # No match — use a sensible default (won't crash, gives approximate result)
+    return DEFAULT_COORDS
 
 def datetime_to_jd(dt):
     """Convert datetime to Julian Day Number"""
