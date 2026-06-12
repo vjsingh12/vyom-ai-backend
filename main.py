@@ -355,14 +355,14 @@ def generate_reading():
     Body: { "name": "...", "lagna": "...", "rashi": "...", "nakshatra": "...",
             "pada": 1, "dashaLord": "...", "today": "...", "focus": "..." }
     Returns: AI-generated reading JSON (today, love, career, health, finance, action)
-    Calls Claude API server-side — avoids browser CORS issues and keeps API key secret.
+    Calls Google Gemini API server-side — avoids browser CORS issues and keeps API key secret.
     """
     try:
         data = request.get_json()
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        api_key = os.environ.get('GEMINI_API_KEY')
 
         if not api_key:
-            return jsonify({"error": "Server not configured: missing ANTHROPIC_API_KEY"}), 500
+            return jsonify({"error": "Server not configured: missing GEMINI_API_KEY"}), 500
 
         focus_labels = {
             'general': 'overall life',
@@ -400,31 +400,33 @@ Tone rules:
 - No jargon like "8th house" or "natal chart" — speak in plain human language
 - Be specific to their Lagna and Rashi — not generic
 - Sound like a wise elder who genuinely cares, not a fortune cookie
-- Weave in the {data.get('dashaLord')} Mahadasha energy naturally"""
+- Weave in the {data.get('dashaLord')} Mahadasha energy naturally
+
+Respond with ONLY the JSON object, nothing else."""
 
         payload = json.dumps({
-            "model": "claude-sonnet-4-6",
-            "max_tokens": 1000,
-            "messages": [{"role": "user", "content": prompt}]
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": {
+                "temperature": 0.9,
+                "maxOutputTokens": 1024
+            }
         }).encode('utf-8')
 
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+
         req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
+            url,
             data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01"
-            },
+            headers={"Content-Type": "application/json"},
             method="POST"
         )
 
         with urllib.request.urlopen(req, timeout=45) as resp:
             result = json.loads(resp.read().decode('utf-8'))
 
-        raw_text = "".join(
-            block.get("text", "") for block in result.get("content", [])
-        )
+        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         clean = raw_text.replace("```json", "").replace("```", "").strip()
         reading = json.loads(clean)
 
@@ -432,7 +434,7 @@ Tone rules:
 
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
-        return jsonify({"error": f"Anthropic API error ({e.code}): {error_body}"}), 500
+        return jsonify({"error": f"Gemini API error ({e.code}): {error_body}"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
