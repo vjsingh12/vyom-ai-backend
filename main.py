@@ -61,6 +61,66 @@ PLANET_NAMES = {
     swe.TRUE_NODE: "Rahu"
 }
 
+# Curated Lal Kitab remedy library — paraphrased from multiple traditional sources,
+# filtered to keep only safe, simple, low-cost, non-violent actions.
+# Each planet has several candidate remedies; the AI selects and personalises ONE.
+LAL_KITAB_REMEDIES = {
+    "Sun": [
+        "Offer water to the rising Sun each morning, facing east",
+        "Donate jaggery and wheat to those in need on Sundays",
+        "Feed roti (flatbread) to cows on Sunday mornings",
+        "Spend a few minutes in sunlight each morning before starting your day"
+    ],
+    "Moon": [
+        "Keep a small steel or copper vessel of water by your bed at night, and water a plant with it the next morning",
+        "Donate rice, milk, or white sweets on Mondays",
+        "Avoid difficult conversations with your mother or maternal figures on Mondays",
+        "Spend a few quiet minutes near water (a river, lake, or even a bath) on Monday evenings"
+    ],
+    "Mars": [
+        "Donate red lentils (masoor dal) or jaggery on Tuesdays",
+        "Offer something sweet to someone in need on Tuesdays, especially before any difficult conversation",
+        "Avoid starting arguments or major confrontations on Tuesdays",
+        "Channel restless energy into physical activity early in the day"
+    ],
+    "Mercury": [
+        "Donate green moong dal or fresh green vegetables on Wednesdays",
+        "Keep your work or study desk clutter-free, especially on Wednesdays",
+        "Feed green leafy fodder to a cow, or simply donate to a local goshala, on Wednesdays",
+        "Write down your thoughts before an important conversation on Wednesdays"
+    ],
+    "Jupiter": [
+        "Donate turmeric, chickpeas (chana dal), or yellow sweets on Thursdays",
+        "Seek a few words of guidance from a teacher, mentor, or elder on Thursdays",
+        "Water a tree (especially a peepal tree, if accessible) on Thursday mornings",
+        "Set aside a small amount for charity each Thursday, even if modest"
+    ],
+    "Venus": [
+        "Donate white items — rice, sugar, or white clothing — on Fridays",
+        "Offer white flowers or light a candle at a place of worship on Fridays",
+        "Do something small and generous for the women in your family on Fridays",
+        "Spend time on something creative or beautifying your space on Fridays"
+    ],
+    "Saturn": [
+        "Donate black sesame seeds, black lentils (urad dal), or iron items on Saturdays",
+        "Feed crows or stray dogs on Saturday mornings",
+        "Light a small mustard oil lamp on Saturday evenings",
+        "Be extra patient with delays today — resist the urge to force outcomes"
+    ],
+    "Rahu": [
+        "Donate mustard oil, black gram, or a coconut on Saturdays",
+        "Give something to someone facing genuine hardship, without expecting anything in return",
+        "Avoid shortcuts, new contracts, or impulsive decisions today — wait a day before committing",
+        "Keep your living space tidy, especially under your bed and in storage areas"
+    ],
+    "Ketu": [
+        "Donate sesame seeds or a blanket to someone in need",
+        "Feed stray dogs, especially brown or black ones",
+        "Spend 10 minutes in quiet reflection or meditation, with no phone nearby",
+        "Let go of one small grudge or unresolved thought today"
+    ]
+}
+
 # ── HELPERS ────────────────────────────────────────────────────────────────
 
 # Common Indian cities/towns — lat/lng lookup (avoids slow/unreliable external geocoding calls)
@@ -285,7 +345,98 @@ def get_all_planets(jd, lagna_rashi_idx=0):
 
     return planets
 
-# ── MAIN API ENDPOINT ──────────────────────────────────────────────────────
+def detect_doshas(planets, lagna_rashi_idx, moon_rashi_idx, jd):
+    """
+    Detect common doshas from the birth chart.
+    Returns a list of {name, present, description} dicts.
+    Keeps to widely-used, computable definitions:
+      - Mangal Dosha (Mars in houses 1,2,4,7,8,12 from Lagna)
+      - Kaal Sarp Dosha (all 7 classical planets between Rahu and Ketu)
+      - Sade Sati (current transiting Saturn within 1 sign of natal Moon)
+    """
+    doshas = []
+
+    # ── Mangal Dosha (Mars Dosha) ──
+    mars_house = planets.get("Mars", {}).get("house")
+    manglik_houses = [1, 2, 4, 7, 8, 12]
+    is_manglik = mars_house in manglik_houses
+    doshas.append({
+        "name": "Mangal Dosha (Mars Dosha)",
+        "present": is_manglik,
+        "description": (
+            f"Mars sits in a position (house {mars_house}) that classically forms Mangal Dosha — "
+            "often associated with added intensity or friction in close relationships and partnerships."
+            if is_manglik else
+            "Mars is not placed in a position that forms Mangal Dosha in this chart."
+        )
+    })
+
+    # ── Kaal Sarp Dosha ──
+    rahu_lon = planets.get("Rahu", {}).get("longitude")
+    ketu_lon = planets.get("Ketu", {}).get("longitude")
+    is_kaal_sarp = False
+    if rahu_lon is not None and ketu_lon is not None:
+        other_planets = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn"]
+        other_lons = [planets[p]["longitude"] for p in other_planets if p in planets]
+
+        def in_arc(lon, start, end):
+            # Is `lon` within the arc going clockwise from start to end?
+            if start <= end:
+                return start <= lon <= end
+            return lon >= start or lon <= end
+
+        all_on_one_side = all(in_arc(p, rahu_lon, ketu_lon) for p in other_lons) or \
+                           all(in_arc(p, ketu_lon, rahu_lon) for p in other_lons)
+        is_kaal_sarp = all_on_one_side
+
+    doshas.append({
+        "name": "Kaal Sarp Dosha",
+        "present": is_kaal_sarp,
+        "description": (
+            "All major planets fall on one side of the Rahu-Ketu axis, forming Kaal Sarp Dosha — "
+            "traditionally linked to delays and obstacles that often resolve later in life, "
+            "sometimes bringing unexpected strength once worked through."
+            if is_kaal_sarp else
+            "Planets are distributed on both sides of the Rahu-Ketu axis — Kaal Sarp Dosha is not present."
+        )
+    })
+
+    # ── Sade Sati (current transit of Saturn relative to natal Moon) ──
+    try:
+        now = datetime.now()
+        jd_now = datetime_to_jd(now)
+        saturn_now_lon = get_sidereal_position(jd_now, swe.SATURN)
+        saturn_now_rashi = longitude_to_rashi(saturn_now_lon)
+
+        # Sade Sati = transiting Saturn in the 12th, 1st, or 2nd sign from natal Moon sign
+        diff = (saturn_now_rashi - moon_rashi_idx) % 12
+        is_sade_sati = diff in [11, 0, 1]  # 12th, 1st (same), 2nd
+
+        phase = None
+        if diff == 11:
+            phase = "first phase (rising)"
+        elif diff == 0:
+            phase = "peak phase"
+        elif diff == 1:
+            phase = "final phase (waning)"
+
+        doshas.append({
+            "name": "Sade Sati",
+            "present": is_sade_sati,
+            "description": (
+                f"Saturn is currently transiting in its Sade Sati position relative to your Moon sign — "
+                f"the {phase}. This 7.5-year cycle often brings significant life restructuring, lessons in "
+                "patience, and long-term growth, even if it feels heavy at times."
+                if is_sade_sati else
+                "Saturn is not currently in a Sade Sati transit relative to your Moon sign."
+            )
+        })
+    except Exception:
+        pass
+
+    return doshas
+
+
 
 @app.route('/chart', methods=['POST'])
 def calculate_chart():
@@ -341,6 +492,9 @@ def calculate_chart():
         # Dasha
         dasha = calculate_vimshottari_dasha(moon_lon, jd)
 
+        # Doshas
+        doshas = detect_doshas(planets, lagna_rashi_idx, moon_rashi_idx, jd)
+
         # Build response
         response = {
             "lagna": {
@@ -357,6 +511,7 @@ def calculate_chart():
                 "nakshatra": nakshatra
             },
             "dasha": dasha,
+            "doshas": doshas,
             "planets": planets,
             "meta": {
                 "latitude": round(lat, 4),
@@ -373,7 +528,7 @@ def calculate_chart():
         return jsonify({"error": str(e)}), 500
 
 
-def call_groq(prompt, api_key, temperature=0.9, max_tokens=1400):
+def call_groq(prompt, api_key, temperature=0.9, max_tokens=1900):
     """Call Groq's chat completion API and return the raw text response."""
     payload = json.dumps({
         "model": "llama-3.3-70b-versatile",
@@ -427,6 +582,25 @@ def generate_reading():
 
         planets_summary = data.get('planets_summary', '')
         antardasha = data.get('antardasha', '')
+        dasha_lord = data.get('dashaLord', '')
+
+        # Build a candidate remedy list from the Mahadasha lord and Antardasha lord
+        remedy_candidates = []
+        for lord in [dasha_lord, antardasha]:
+            if lord in LAL_KITAB_REMEDIES and lord not in [c[0] for c in remedy_candidates]:
+                remedy_candidates.append((lord, LAL_KITAB_REMEDIES[lord]))
+
+        remedy_options_text = ""
+        for lord, options in remedy_candidates:
+            remedy_options_text += f"\nFor {lord}, choose from:\n"
+            for opt in options:
+                remedy_options_text += f"- {opt}\n"
+
+        if not remedy_options_text:
+            # Fallback: offer Jupiter's remedies (generally benign/positive)
+            remedy_options_text = "\nFor Jupiter, choose from:\n"
+            for opt in LAL_KITAB_REMEDIES["Jupiter"]:
+                remedy_options_text += f"- {opt}\n"
 
         prompt = f"""You are Vyom AI — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
 
@@ -439,6 +613,7 @@ Their Vedic chart details:
 - Current Mahadasha: {data.get('dashaLord')}
 - Current Antardasha: {antardasha}
 - Planetary placements (house positions relative to their Lagna): {planets_summary}
+- Active doshas in this chart: {data.get('active_doshas', 'None notable')}
 - PRIMARY FOCUS REQUESTED: {focus_label}
 
 CRITICAL INSTRUCTIONS:
@@ -447,6 +622,10 @@ CRITICAL INSTRUCTIONS:
 3. Avoid soft, vague, feel-good filler ("things will work out", "stay positive"). Be SPECIFIC and grounded — name a likely situation, a real tension, or a concrete opportunity based on the chart data. It's okay to mention a challenge or friction, not just positives.
 4. Vary sentence rhythm and word choice — do not reuse the same openings or phrases across different focus areas.
 5. For "planetary_influences": pick the 3 most significant planets right now (always include the Mahadasha lord and Antardasha lord, plus one more relevant to the {focus_label} focus). For each, describe in ONE plain-language sentence what that planet is "doing" in real-life terms — e.g. "Saturn is currently shaping how much responsibility you're carrying at work, and may be making a project feel slower than you'd like." No jargon, no house numbers — describe the real-life area and the felt effect.
+6. For the Lal Kitab remedy: choose EXACTLY ONE option from the candidate list below (do not invent a new remedy — pick from this list verbatim or with very minor wording adjustment for natural flow). Pick whichever option best fits {data.get('name', 'Seeker')}'s {focus_label} focus.
+7. If any doshas are listed as active above, briefly acknowledge the most relevant one in the DOSHA_NOTE field — calm, factual, never alarming. If "None notable" or empty, write DOSHA_NOTE as a short reassuring note that no major doshas are currently active.
+
+REMEDY CANDIDATES:{remedy_options_text}
 
 Write your reading using EXACTLY this format — plain text with delimiter tags, no JSON, no markdown, no backticks. Write naturally, including apostrophes and quotes as needed within the text:
 
@@ -465,12 +644,17 @@ Write your reading using EXACTLY this format — plain text with delimiter tags,
 [HEALTH]2-3 sentences about energy and physical wellbeing.[/HEALTH]
 [FINANCE]2-3 sentences about money and material matters.[/FINANCE]
 [ACTION]One clear, specific, poetic action they should take today, directly tied to the {focus_label} focus. Make it beautiful and doable. No more than 2 sentences.[/ACTION]
+[REMEDY_NAME]The chosen remedy from the candidate list above, stated as a clear short instruction (you may lightly rephrase for flow, but keep the core action and timing intact)[/REMEDY_NAME]
+[REMEDY_WHY]One sentence on why this remedy is suggested for them right now, connected to the planetary influence above — plain language, no jargon.[/REMEDY_WHY]
+[REMEDY_HOW]One sentence describing exactly how and when to do it — simple, doable, low-cost, no special ingredients beyond common household items.[/REMEDY_HOW]
+[DOSHA_NOTE]One to two sentences calmly addressing the most relevant active dosha (or a brief reassuring note if none are active). Plain language, factual tone — never fear-based.[/DOSHA_NOTE]
 
 Tone rules:
 - Never say "the stars say" or "the planets indicate" — just speak directly
 - No jargon like "8th house" or "natal chart" — speak in plain human language (e.g. say "the area of your life connected to partnerships" instead of "7th house")
 - Sound like a wise elder who genuinely cares — direct, real, sometimes challenging, never a fortune cookie
 - Weave in the {data.get('dashaLord')} Mahadasha and {antardasha} Antardasha energy naturally
+- The Lal Kitab remedy must be genuinely traditional, simple, safe, and inexpensive (water, grains, charity, colors, directions, timing) — never anything involving animal sacrifice, dangerous substances, or large expense
 
 Output ONLY the tagged sections above, nothing else — no preamble, no closing remarks."""
 
@@ -487,7 +671,13 @@ Output ONLY the tagged sections above, nothing else — no preamble, no closing 
             "career": extract("CAREER", raw_text),
             "health": extract("HEALTH", raw_text),
             "finance": extract("FINANCE", raw_text),
-            "action": extract("ACTION", raw_text)
+            "action": extract("ACTION", raw_text),
+            "remedy": {
+                "name": extract("REMEDY_NAME", raw_text),
+                "why": extract("REMEDY_WHY", raw_text),
+                "how": extract("REMEDY_HOW", raw_text)
+            },
+            "dosha_note": extract("DOSHA_NOTE", raw_text)
         }
 
         for i in range(1, 4):
