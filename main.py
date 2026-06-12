@@ -403,7 +403,7 @@ Tone rules:
 - Weave in the {data.get('dashaLord')} Mahadasha energy naturally"""
 
         payload = json.dumps({
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "max_tokens": 1000,
             "messages": [{"role": "user", "content": prompt}]
         }).encode('utf-8')
@@ -430,6 +430,9 @@ Tone rules:
 
         return jsonify(reading)
 
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        return jsonify({"error": f"Anthropic API error ({e.code}): {error_body}"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
