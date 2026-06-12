@@ -355,14 +355,14 @@ def generate_reading():
     Body: { "name": "...", "lagna": "...", "rashi": "...", "nakshatra": "...",
             "pada": 1, "dashaLord": "...", "today": "...", "focus": "..." }
     Returns: AI-generated reading JSON (today, love, career, health, finance, action)
-    Calls Google Gemini API server-side — avoids browser CORS issues and keeps API key secret.
+    Calls Groq API server-side — avoids browser CORS issues and keeps API key secret.
     """
     try:
         data = request.get_json()
-        api_key = os.environ.get('GEMINI_API_KEY')
+        api_key = os.environ.get('GROQ_API_KEY')
 
         if not api_key:
-            return jsonify({"error": "Server not configured: missing GEMINI_API_KEY"}), 500
+            return jsonify({"error": "Server not configured: missing GROQ_API_KEY"}), 500
 
         focus_labels = {
             'general': 'overall life',
@@ -405,28 +405,26 @@ Tone rules:
 Respond with ONLY the JSON object, nothing else."""
 
         payload = json.dumps({
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }],
-            "generationConfig": {
-                "temperature": 0.9,
-                "maxOutputTokens": 1024
-            }
+            "model": "llama-3.3-70b-versatile",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.9,
+            "max_tokens": 1024
         }).encode('utf-8')
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-
         req = urllib.request.Request(
-            url,
+            "https://api.groq.com/openai/v1/chat/completions",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            },
             method="POST"
         )
 
         with urllib.request.urlopen(req, timeout=45) as resp:
             result = json.loads(resp.read().decode('utf-8'))
 
-        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        raw_text = result["choices"][0]["message"]["content"]
         clean = raw_text.replace("```json", "").replace("```", "").strip()
         reading = json.loads(clean)
 
@@ -434,7 +432,7 @@ Respond with ONLY the JSON object, nothing else."""
 
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
-        return jsonify({"error": f"Gemini API error ({e.code}): {error_body}"}), 500
+        return jsonify({"error": f"Groq API error ({e.code}): {error_body}"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
