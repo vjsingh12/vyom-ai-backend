@@ -372,6 +372,32 @@ def calculate_chart():
         return jsonify({"error": str(e)}), 500
 
 
+def call_groq(prompt, api_key, temperature=0.9, max_tokens=1400):
+    """Call Groq's chat completion API and return the raw text response."""
+    payload = json.dumps({
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "Mozilla/5.0 (VyomAI/1.0)"
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        result = json.loads(resp.read().decode('utf-8'))
+
+    return result["choices"][0]["message"]["content"]
+
+
 @app.route('/reading', methods=['POST'])
 def generate_reading():
     """
@@ -419,9 +445,15 @@ CRITICAL INSTRUCTIONS:
 2. Do NOT default to generic "overall life" advice — every reading must feel distinctly different depending on the focus area and the actual planetary placements given.
 3. Avoid soft, vague, feel-good filler ("things will work out", "stay positive"). Be SPECIFIC and grounded — name a likely situation, a real tension, or a concrete opportunity based on the chart data. It's okay to mention a challenge or friction, not just positives.
 4. Vary sentence rhythm and word choice — do not reuse the same openings or phrases across different focus areas.
+5. For "planetary_influences": pick the 3 most significant planets right now (always include the Mahadasha lord and Antardasha lord, plus one more relevant to the {focus_label} focus). For each, describe in ONE plain-language sentence what that planet is "doing" in real-life terms — e.g. "Saturn is currently shaping how much responsibility you're carrying at work, and may be making a project feel slower than you'd like." No jargon, no house numbers — describe the real-life area and the felt effect.
 
 Write the reading in this EXACT JSON format (respond with JSON only, no markdown, no backticks):
 {{
+  "planetary_influences": [
+    {{"planet": "PlanetName", "headline": "3-5 word real-life headline (e.g. 'Career momentum building')", "effect": "One plain-language sentence on what this planet is doing in their life right now."}},
+    {{"planet": "PlanetName", "headline": "...", "effect": "..."}},
+    {{"planet": "PlanetName", "headline": "...", "effect": "..."}}
+  ],
   "today": "4-5 sentences, primarily about {focus_label}, grounded in their actual planetary placements. Specific, real, and direct — not generic.",
   "love": "2-3 sentences about relationships this week. Specific and actionable.",
   "career": "2-3 sentences about work and purpose this week.",
@@ -438,32 +470,69 @@ Tone rules:
 
 Respond with ONLY the JSON object, nothing else."""
 
-        payload = json.dumps({
-            "model": "llama-3.3-70b-versatile",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.9,
-            "max_tokens": 1024
-        }).encode('utf-8')
-
-        req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-                "User-Agent": "Mozilla/5.0 (VyomAI/1.0)"
-            },
-            method="POST"
-        )
-
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            result = json.loads(resp.read().decode('utf-8'))
-
-        raw_text = result["choices"][0]["message"]["content"]
+        raw_text = call_groq(prompt, api_key)
         clean = raw_text.replace("```json", "").replace("```", "").strip()
         reading = json.loads(clean)
 
         return jsonify(reading)
+
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        return jsonify({"error": f"Groq API error ({e.code}): {error_body}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/ask', methods=['POST'])
+def ask_vyom():
+    """
+    POST /ask
+    Body: { "name": "...", "lagna": "...", "rashi": "...", "nakshatra": "...",
+            "pada": 1, "dashaLord": "...", "antardasha": "...",
+            "planets_summary": "...", "today": "...", "question": "..." }
+    Returns: { "answer": "..." }
+    Free-form Q&A grounded in the user's real chart — finance, love, career, health, anything.
+    """
+    try:
+        data = request.get_json()
+        api_key = os.environ.get('GROQ_API_KEY')
+
+        if not api_key:
+            return jsonify({"error": "Server not configured: missing GROQ_API_KEY"}), 500
+
+        question = (data.get('question') or '').strip()
+        if not question:
+            return jsonify({"error": "No question provided"}), 400
+
+        prompt = f"""You are Vyom AI — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, direct, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
+
+{data.get('name', 'Seeker')} has come to you with a real question about their life. Use their actual Vedic chart to answer it honestly and specifically — this is a real-time consultation, not a generic horoscope.
+
+Their Vedic chart details:
+- Lagna (Ascendant): {data.get('lagna')}
+- Moon Sign (Rashi): {data.get('rashi')}
+- Nakshatra: {data.get('nakshatra')} (Pada {data.get('pada')})
+- Current Mahadasha: {data.get('dashaLord')}
+- Current Antardasha: {data.get('antardasha')}
+- Planetary placements (house positions relative to their Lagna): {data.get('planets_summary')}
+- Today's date: {data.get('today')}
+
+Their question:
+"{question}"
+
+INSTRUCTIONS:
+1. Answer their actual question directly — don't deflect into generic advice. If they ask about a specific situation (e.g. "should I take this job", "will my relationship work out", "is this a good time to invest"), engage with that specific situation using their chart data.
+2. Ground your answer in their actual planetary placements — reference the relevant life area (career, relationships, finances, etc.) and which planet is influencing it, in plain language (no "8th house" type jargon).
+3. Be honest and specific — including about likely challenges or timing concerns, not just reassurance. A wise guide tells the truth kindly, not just what someone wants to hear.
+4. Length: 4-7 sentences. Warm but substantive — this should feel like real guidance, not a fortune cookie.
+5. End with one grounded, practical next step they can take.
+
+Respond with ONLY your answer as plain text — no JSON, no markdown formatting, no headers."""
+
+        answer = call_groq(prompt, api_key, temperature=0.85, max_tokens=700)
+        answer = answer.strip()
+
+        return jsonify({"answer": answer})
 
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
