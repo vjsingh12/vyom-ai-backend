@@ -12,6 +12,8 @@ import math
 import os
 import json
 import urllib.request
+import urllib.parse
+import urllib.error
 
 app = Flask(__name__)
 CORS(app)  # Allow requests from your website
@@ -92,15 +94,32 @@ CITY_COORDS = {
 DEFAULT_COORDS = (28.6139, 77.2090)  # New Delhi — central India fallback
 
 def get_coordinates(place_name):
-    """Fast local lookup for coordinates. Avoids external API calls that can time out."""
+    """
+    Get coordinates for a place.
+    1. Check local cache first (instant, for common cities)
+    2. Fall back to Open-Meteo's free geocoding API (no key required, server-side so no CORS issue)
+    3. Final fallback: New Delhi (won't crash)
+    """
     place_lower = place_name.lower()
 
-    # Direct match on any known city name appearing in the input
+    # Fast local cache for common cities
     for city, coords in CITY_COORDS.items():
         if city in place_lower:
             return coords
 
-    # No match — use a sensible default (won't crash, gives approximate result)
+    # Live geocoding for anything else
+    try:
+        query = urllib.parse.quote(place_name.split(',')[0].strip())
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name={query}&count=1"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (VyomAI/1.0)"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+        if result.get("results"):
+            r = result["results"][0]
+            return r["latitude"], r["longitude"]
+    except Exception:
+        pass
+
     return DEFAULT_COORDS
 
 def datetime_to_jd(dt):
@@ -231,19 +250,21 @@ def calculate_vimshottari_dasha(moon_longitude, birth_jd):
         "timeline": dashas[:5]  # Next 5 dashas
     }
 
-def get_all_planets(jd):
-    """Get sidereal positions of all 9 Vedic planets"""
+def get_all_planets(jd, lagna_rashi_idx=0):
+    """Get sidereal positions of all 9 Vedic planets, including house number relative to Lagna"""
     planets = {}
     for planet_id, planet_name in PLANET_NAMES.items():
         try:
             lon = get_sidereal_position(jd, planet_id)
             rashi_idx = longitude_to_rashi(lon)
             deg_in_rashi = longitude_to_degree_in_rashi(lon)
+            house = ((rashi_idx - lagna_rashi_idx) % 12) + 1
             planets[planet_name] = {
                 "longitude": round(lon, 4),
                 "rashi": RASHIS_SHORT[rashi_idx],
                 "rashi_index": rashi_idx,
-                "degree": round(deg_in_rashi, 2)
+                "degree": round(deg_in_rashi, 2),
+                "house": house
             }
         except Exception:
             pass
@@ -252,11 +273,13 @@ def get_all_planets(jd):
     if "Rahu" in planets:
         ketu_lon = (planets["Rahu"]["longitude"] + 180) % 360
         ketu_rashi = longitude_to_rashi(ketu_lon)
+        ketu_house = ((ketu_rashi - lagna_rashi_idx) % 12) + 1
         planets["Ketu"] = {
             "longitude": round(ketu_lon, 4),
             "rashi": RASHIS_SHORT[ketu_rashi],
             "rashi_index": ketu_rashi,
-            "degree": round(longitude_to_degree_in_rashi(ketu_lon), 2)
+            "degree": round(longitude_to_degree_in_rashi(ketu_lon), 2),
+            "house": ketu_house
         }
 
     return planets
@@ -312,7 +335,7 @@ def calculate_chart():
         nakshatra = get_nakshatra(moon_lon)
 
         # All planets
-        planets = get_all_planets(jd)
+        planets = get_all_planets(jd, lagna_rashi_idx)
 
         # Dasha
         dasha = calculate_vimshottari_dasha(moon_lon, jd)
@@ -322,6 +345,7 @@ def calculate_chart():
             "lagna": {
                 "rashi": RASHIS[lagna_rashi_idx],
                 "rashi_short": RASHIS_SHORT[lagna_rashi_idx],
+                "rashi_index": lagna_rashi_idx,
                 "degree": round(lagna_degree, 2),
                 "longitude": round(lagna_lon, 4)
             },
@@ -372,35 +396,45 @@ def generate_reading():
             'finances': 'finances and abundance'
         }
         focus_label = focus_labels.get(data.get('focus', 'general'), 'overall life')
+        focus_key = data.get('focus', 'general')
+
+        planets_summary = data.get('planets_summary', '')
+        antardasha = data.get('antardasha', '')
 
         prompt = f"""You are Vyom AI — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
 
-Generate a personalised Vedic astrology reading for {data.get('name', 'Seeker')}.
+Generate a personalised, REAL-TIME Vedic astrology reading for {data.get('name', 'Seeker')} for {data.get('today')}.
 
 Their Vedic chart details:
 - Lagna (Ascendant): {data.get('lagna')}
 - Moon Sign (Rashi): {data.get('rashi')}
 - Nakshatra: {data.get('nakshatra')} (Pada {data.get('pada')})
 - Current Mahadasha: {data.get('dashaLord')}
-- Today's date: {data.get('today')}
-- Focus area they requested: {focus_label}
+- Current Antardasha: {antardasha}
+- Planetary placements (house positions relative to their Lagna): {planets_summary}
+- PRIMARY FOCUS REQUESTED: {focus_label}
+
+CRITICAL INSTRUCTIONS:
+1. The "today" field MUST be primarily about {focus_label} — this is what {data.get('name', 'Seeker')} specifically asked about. Reference the relevant planet's house placement from the data above to ground this in their actual chart (in plain language, no jargon).
+2. Do NOT default to generic "overall life" advice — every reading must feel distinctly different depending on the focus area and the actual planetary placements given.
+3. Avoid soft, vague, feel-good filler ("things will work out", "stay positive"). Be SPECIFIC and grounded — name a likely situation, a real tension, or a concrete opportunity based on the chart data. It's okay to mention a challenge or friction, not just positives.
+4. Vary sentence rhythm and word choice — do not reuse the same openings or phrases across different focus areas.
 
 Write the reading in this EXACT JSON format (respond with JSON only, no markdown, no backticks):
 {{
-  "today": "A 3-4 sentence insight about today specifically. Mention the Mahadasha lord's influence. Warm, personal, specific.",
+  "today": "4-5 sentences, primarily about {focus_label}, grounded in their actual planetary placements. Specific, real, and direct — not generic.",
   "love": "2-3 sentences about relationships this week. Specific and actionable.",
   "career": "2-3 sentences about work and purpose this week.",
   "health": "2-3 sentences about energy and physical wellbeing.",
   "finance": "2-3 sentences about money and material matters.",
-  "action": "One clear, specific, poetic action they should take today. Make it beautiful and doable. No more than 2 sentences."
+  "action": "One clear, specific, poetic action they should take today, directly tied to the {focus_label} focus. Make it beautiful and doable. No more than 2 sentences."
 }}
 
 Tone rules:
 - Never say "the stars say" or "the planets indicate" — just speak directly
-- No jargon like "8th house" or "natal chart" — speak in plain human language
-- Be specific to their Lagna and Rashi — not generic
-- Sound like a wise elder who genuinely cares, not a fortune cookie
-- Weave in the {data.get('dashaLord')} Mahadasha energy naturally
+- No jargon like "8th house" or "natal chart" — speak in plain human language (e.g. say "the area of your life connected to partnerships" instead of "7th house")
+- Sound like a wise elder who genuinely cares — direct, real, sometimes challenging, never a fortune cookie
+- Weave in the {data.get('dashaLord')} Mahadasha and {antardasha} Antardasha energy naturally
 
 Respond with ONLY the JSON object, nothing else."""
 
