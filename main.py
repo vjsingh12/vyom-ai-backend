@@ -1,0 +1,323 @@
+"""
+Vyom AI — Vedic Astrology Calculation Engine
+Using Swiss Ephemeris (pyswisseph) with Lahiri Ayanamsa
+Accurate Lagna, Rashi, Nakshatra, Vimshottari Dasha calculations
+"""
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import swisseph as swe
+from datetime import datetime, timezone
+from geopy.geocoders import Nominatim
+import math
+
+app = Flask(__name__)
+CORS(app)  # Allow requests from your website
+
+# ── CONSTANTS ──────────────────────────────────────────────────────────────
+
+RASHIS = [
+    "Mesha (Aries)", "Vrishabha (Taurus)", "Mithuna (Gemini)",
+    "Karka (Cancer)", "Simha (Leo)", "Kanya (Virgo)",
+    "Tula (Libra)", "Vrishchika (Scorpio)", "Dhanu (Sagittarius)",
+    "Makara (Capricorn)", "Kumbha (Aquarius)", "Meena (Pisces)"
+]
+
+RASHIS_SHORT = [
+    "Mesha", "Vrishabha", "Mithuna", "Karka", "Simha", "Kanya",
+    "Tula", "Vrishchika", "Dhanu", "Makara", "Kumbha", "Meena"
+]
+
+NAKSHATRAS = [
+    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra",
+    "Punarvasu", "Pushya", "Ashlesha", "Magha", "Purva Phalguni", "Uttara Phalguni",
+    "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha", "Jyeshtha",
+    "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana", "Dhanishtha",
+    "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada", "Revati"
+]
+
+# Nakshatra lords in Vimshottari Dasha order
+NAKSHATRA_LORDS = [
+    "Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury"
+]
+
+# Dasha periods in years
+DASHA_YEARS = {
+    "Ketu": 7, "Venus": 20, "Sun": 6, "Moon": 10, "Mars": 7,
+    "Rahu": 18, "Jupiter": 16, "Saturn": 19, "Mercury": 17
+}
+
+DASHA_ORDER = ["Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury"]
+
+PLANET_NAMES = {
+    swe.SUN: "Sun", swe.MOON: "Moon", swe.MARS: "Mars",
+    swe.MERCURY: "Mercury", swe.JUPITER: "Jupiter",
+    swe.VENUS: "Venus", swe.SATURN: "Saturn",
+    swe.TRUE_NODE: "Rahu"
+}
+
+# ── HELPERS ────────────────────────────────────────────────────────────────
+
+def get_coordinates(place_name):
+    """Get lat/lng from place name using geopy"""
+    try:
+        geolocator = Nominatim(user_agent="vyom_ai")
+        location = geolocator.geocode(place_name, timeout=10)
+        if location:
+            return location.latitude, location.longitude
+        return None, None
+    except Exception:
+        return None, None
+
+def datetime_to_jd(dt):
+    """Convert datetime to Julian Day Number"""
+    return swe.julday(
+        dt.year, dt.month, dt.day,
+        dt.hour + dt.minute / 60.0 + dt.second / 3600.0
+    )
+
+def get_ayanamsa(jd):
+    """Get Lahiri Ayanamsa value"""
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    return swe.get_ayanamsa(jd)
+
+def get_sidereal_position(jd, planet):
+    """Get sidereal (Vedic) position of a planet"""
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    flags = swe.FLG_SIDEREAL | swe.FLG_SPEED
+    result, _ = swe.calc_ut(jd, planet, flags)
+    return result[0]  # longitude in degrees
+
+def longitude_to_rashi(longitude):
+    """Convert ecliptic longitude to Rashi index (0-11)"""
+    return int(longitude / 30)
+
+def longitude_to_degree_in_rashi(longitude):
+    """Get degrees within a Rashi"""
+    return longitude % 30
+
+def get_nakshatra(moon_longitude):
+    """Get Nakshatra from Moon's sidereal longitude"""
+    nak_index = int(moon_longitude / (360 / 27))
+    nak_pada = int((moon_longitude % (360 / 27)) / (360 / 108)) + 1
+    return {
+        "index": nak_index,
+        "name": NAKSHATRAS[nak_index],
+        "pada": nak_pada,
+        "lord": NAKSHATRA_LORDS[nak_index % 9]
+    }
+
+def get_lagna(jd, lat, lon):
+    """Calculate Lagna (Ascendant) using Swiss Ephemeris"""
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    cusps, ascmc = swe.houses(jd, lat, lon, b'W')  # Whole sign houses
+    ayanamsa = get_ayanamsa(jd)
+    tropical_asc = ascmc[0]
+    sidereal_asc = (tropical_asc - ayanamsa) % 360
+    return sidereal_asc
+
+def calculate_vimshottari_dasha(moon_longitude, birth_jd):
+    """
+    Calculate current Vimshottari Dasha and Antardasha
+    Based on Moon's Nakshatra at birth
+    """
+    nakshatra = get_nakshatra(moon_longitude)
+    nak_lord = nakshatra["lord"]
+    nak_lord_index = DASHA_ORDER.index(nak_lord)
+
+    # Degrees elapsed in current nakshatra at birth
+    nak_size = 360 / 27  # 13.333...degrees
+    degrees_in_nak = moon_longitude % nak_size
+    fraction_elapsed = degrees_in_nak / nak_size
+
+    # Years elapsed in first dasha at birth
+    first_dasha_years = DASHA_YEARS[nak_lord]
+    years_elapsed_at_birth = fraction_elapsed * first_dasha_years
+
+    # Build dasha timeline from birth
+    birth_dt = swe.revjul(birth_jd)
+    birth_date = datetime(int(birth_dt[0]), int(birth_dt[1]), int(birth_dt[2]))
+
+    dashas = []
+    current_date = birth_date
+    # Subtract already-elapsed portion of first dasha
+    from dateutil.relativedelta import relativedelta
+
+    # Start of first dasha (before birth)
+    days_elapsed = years_elapsed_at_birth * 365.25
+    dasha_start = birth_date - relativedelta(days=int(days_elapsed))
+
+    for i in range(9):
+        lord_index = (nak_lord_index + i) % 9
+        lord = DASHA_ORDER[lord_index]
+        years = DASHA_YEARS[lord]
+        dasha_end = dasha_start + relativedelta(years=years)
+        dashas.append({
+            "lord": lord,
+            "start": dasha_start.strftime("%Y-%m-%d"),
+            "end": dasha_end.strftime("%Y-%m-%d"),
+            "years": years
+        })
+        dasha_start = dasha_end
+
+    # Find current dasha
+    today = datetime.now()
+    current_dasha = None
+    current_antardasha = None
+
+    for dasha in dashas:
+        d_start = datetime.strptime(dasha["start"], "%Y-%m-%d")
+        d_end = datetime.strptime(dasha["end"], "%Y-%m-%d")
+        if d_start <= today <= d_end:
+            current_dasha = dasha
+
+            # Calculate Antardasha within current Mahadasha
+            total_days = (d_end - d_start).days
+            ad_start = d_start
+            for j in range(9):
+                ad_lord_index = (DASHA_ORDER.index(dasha["lord"]) + j) % 9
+                ad_lord = DASHA_ORDER[ad_lord_index]
+                ad_years = DASHA_YEARS[ad_lord]
+                ad_days = int((ad_years / 120) * DASHA_YEARS[dasha["lord"]] * 365.25)
+                ad_end = ad_start + relativedelta(days=ad_days)
+
+                if ad_start <= today <= ad_end:
+                    current_antardasha = {
+                        "lord": ad_lord,
+                        "start": ad_start.strftime("%Y-%m-%d"),
+                        "end": ad_end.strftime("%Y-%m-%d")
+                    }
+                    break
+                ad_start = ad_end
+            break
+
+    return {
+        "mahadasha": current_dasha,
+        "antardasha": current_antardasha,
+        "timeline": dashas[:5]  # Next 5 dashas
+    }
+
+def get_all_planets(jd):
+    """Get sidereal positions of all 9 Vedic planets"""
+    planets = {}
+    for planet_id, planet_name in PLANET_NAMES.items():
+        try:
+            lon = get_sidereal_position(jd, planet_id)
+            rashi_idx = longitude_to_rashi(lon)
+            deg_in_rashi = longitude_to_degree_in_rashi(lon)
+            planets[planet_name] = {
+                "longitude": round(lon, 4),
+                "rashi": RASHIS_SHORT[rashi_idx],
+                "rashi_index": rashi_idx,
+                "degree": round(deg_in_rashi, 2)
+            }
+        except Exception:
+            pass
+
+    # Ketu = Rahu + 180
+    if "Rahu" in planets:
+        ketu_lon = (planets["Rahu"]["longitude"] + 180) % 360
+        ketu_rashi = longitude_to_rashi(ketu_lon)
+        planets["Ketu"] = {
+            "longitude": round(ketu_lon, 4),
+            "rashi": RASHIS_SHORT[ketu_rashi],
+            "rashi_index": ketu_rashi,
+            "degree": round(longitude_to_degree_in_rashi(ketu_lon), 2)
+        }
+
+    return planets
+
+# ── MAIN API ENDPOINT ──────────────────────────────────────────────────────
+
+@app.route('/chart', methods=['POST'])
+def calculate_chart():
+    """
+    POST /chart
+    Body: { "dob": "1985-03-12", "tob": "18:59", "pob": "Bhawanigarh, Punjab, India" }
+    Returns: Full Vedic chart data
+    """
+    try:
+        data = request.get_json()
+        dob = data.get('dob')          # "YYYY-MM-DD"
+        tob = data.get('tob')          # "HH:MM"
+        pob = data.get('pob')          # "City, Country"
+
+        if not all([dob, tob, pob]):
+            return jsonify({"error": "Missing required fields: dob, tob, pob"}), 400
+
+        # Parse date and time
+        dt_str = f"{dob} {tob}"
+        dt_local = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+
+        # Get coordinates
+        lat, lon = get_coordinates(pob)
+        if lat is None:
+            # Fallback to Bhawanigarh coordinates
+            lat, lon = 30.2733, 75.9669
+
+        # Convert to UTC (assume IST = UTC+5:30 for India)
+        # For production, use pytz with proper timezone detection
+        from dateutil import tz
+        india_tz = tz.gettz('Asia/Kolkata')
+        dt_aware = dt_local.replace(tzinfo=india_tz)
+        dt_utc = dt_aware.astimezone(tz.UTC)
+
+        # Julian Day
+        jd = datetime_to_jd(dt_utc)
+
+        # Calculate Lagna
+        lagna_lon = get_lagna(jd, lat, lon)
+        lagna_rashi_idx = longitude_to_rashi(lagna_lon)
+        lagna_degree = longitude_to_degree_in_rashi(lagna_lon)
+
+        # Moon position
+        moon_lon = get_sidereal_position(jd, swe.MOON)
+        moon_rashi_idx = longitude_to_rashi(moon_lon)
+
+        # Nakshatra
+        nakshatra = get_nakshatra(moon_lon)
+
+        # All planets
+        planets = get_all_planets(jd)
+
+        # Dasha
+        dasha = calculate_vimshottari_dasha(moon_lon, jd)
+
+        # Build response
+        response = {
+            "lagna": {
+                "rashi": RASHIS[lagna_rashi_idx],
+                "rashi_short": RASHIS_SHORT[lagna_rashi_idx],
+                "degree": round(lagna_degree, 2),
+                "longitude": round(lagna_lon, 4)
+            },
+            "moon": {
+                "rashi": RASHIS[moon_rashi_idx],
+                "rashi_short": RASHIS_SHORT[moon_rashi_idx],
+                "longitude": round(moon_lon, 4),
+                "nakshatra": nakshatra
+            },
+            "dasha": dasha,
+            "planets": planets,
+            "meta": {
+                "latitude": round(lat, 4),
+                "longitude_geo": round(lon, 4),
+                "julian_day": round(jd, 6),
+                "ayanamsa": "Lahiri",
+                "house_system": "Whole Sign"
+            }
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "Vyom AI engine is running", "engine": "Swiss Ephemeris + Lahiri Ayanamsa"})
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=False)
