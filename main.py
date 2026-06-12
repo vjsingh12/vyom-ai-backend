@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import math
 import os
 import json
+import re
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -447,20 +448,23 @@ CRITICAL INSTRUCTIONS:
 4. Vary sentence rhythm and word choice — do not reuse the same openings or phrases across different focus areas.
 5. For "planetary_influences": pick the 3 most significant planets right now (always include the Mahadasha lord and Antardasha lord, plus one more relevant to the {focus_label} focus). For each, describe in ONE plain-language sentence what that planet is "doing" in real-life terms — e.g. "Saturn is currently shaping how much responsibility you're carrying at work, and may be making a project feel slower than you'd like." No jargon, no house numbers — describe the real-life area and the felt effect.
 
-Write the reading in this EXACT JSON format (respond with JSON only, no markdown, no backticks):
-{{
-  "planetary_influences": [
-    {{"planet": "PlanetName", "headline": "3-5 word real-life headline (e.g. 'Career momentum building')", "effect": "One plain-language sentence on what this planet is doing in their life right now."}},
-    {{"planet": "PlanetName", "headline": "...", "effect": "..."}},
-    {{"planet": "PlanetName", "headline": "...", "effect": "..."}}
-  ],
-  "today": "4-5 sentences, primarily about {focus_label}, grounded in their actual planetary placements. Specific, real, and direct — not generic.",
-  "love": "2-3 sentences about relationships this week. Specific and actionable.",
-  "career": "2-3 sentences about work and purpose this week.",
-  "health": "2-3 sentences about energy and physical wellbeing.",
-  "finance": "2-3 sentences about money and material matters.",
-  "action": "One clear, specific, poetic action they should take today, directly tied to the {focus_label} focus. Make it beautiful and doable. No more than 2 sentences."
-}}
+Write your reading using EXACTLY this format — plain text with delimiter tags, no JSON, no markdown, no backticks. Write naturally, including apostrophes and quotes as needed within the text:
+
+[INFLUENCE1_PLANET]PlanetName[/INFLUENCE1_PLANET]
+[INFLUENCE1_HEADLINE]3-5 word real-life headline, e.g. Career momentum building[/INFLUENCE1_HEADLINE]
+[INFLUENCE1_EFFECT]One plain-language sentence on what this planet is doing in their life right now.[/INFLUENCE1_EFFECT]
+[INFLUENCE2_PLANET]PlanetName[/INFLUENCE2_PLANET]
+[INFLUENCE2_HEADLINE]...[/INFLUENCE2_HEADLINE]
+[INFLUENCE2_EFFECT]...[/INFLUENCE2_EFFECT]
+[INFLUENCE3_PLANET]PlanetName[/INFLUENCE3_PLANET]
+[INFLUENCE3_HEADLINE]...[/INFLUENCE3_HEADLINE]
+[INFLUENCE3_EFFECT]...[/INFLUENCE3_EFFECT]
+[TODAY]4-5 sentences, primarily about {focus_label}, grounded in their actual planetary placements. Specific, real, and direct — not generic.[/TODAY]
+[LOVE]2-3 sentences about relationships this week. Specific and actionable.[/LOVE]
+[CAREER]2-3 sentences about work and purpose this week.[/CAREER]
+[HEALTH]2-3 sentences about energy and physical wellbeing.[/HEALTH]
+[FINANCE]2-3 sentences about money and material matters.[/FINANCE]
+[ACTION]One clear, specific, poetic action they should take today, directly tied to the {focus_label} focus. Make it beautiful and doable. No more than 2 sentences.[/ACTION]
 
 Tone rules:
 - Never say "the stars say" or "the planets indicate" — just speak directly
@@ -468,11 +472,36 @@ Tone rules:
 - Sound like a wise elder who genuinely cares — direct, real, sometimes challenging, never a fortune cookie
 - Weave in the {data.get('dashaLord')} Mahadasha and {antardasha} Antardasha energy naturally
 
-Respond with ONLY the JSON object, nothing else."""
+Output ONLY the tagged sections above, nothing else — no preamble, no closing remarks."""
 
         raw_text = call_groq(prompt, api_key)
-        clean = raw_text.replace("```json", "").replace("```", "").strip()
-        reading = json.loads(clean)
+
+        def extract(tag, text):
+            m = re.search(rf'\[{tag}\](.*?)\[/{tag}\]', text, re.DOTALL)
+            return m.group(1).strip() if m else ''
+
+        reading = {
+            "planetary_influences": [],
+            "today": extract("TODAY", raw_text),
+            "love": extract("LOVE", raw_text),
+            "career": extract("CAREER", raw_text),
+            "health": extract("HEALTH", raw_text),
+            "finance": extract("FINANCE", raw_text),
+            "action": extract("ACTION", raw_text)
+        }
+
+        for i in range(1, 4):
+            planet = extract(f"INFLUENCE{i}_PLANET", raw_text)
+            headline = extract(f"INFLUENCE{i}_HEADLINE", raw_text)
+            effect = extract(f"INFLUENCE{i}_EFFECT", raw_text)
+            if planet:
+                reading["planetary_influences"].append({
+                    "planet": planet, "headline": headline, "effect": effect
+                })
+
+        # Sanity check — if core fields are empty, parsing failed entirely
+        if not reading["today"]:
+            return jsonify({"error": f"Could not parse AI response. Raw output: {raw_text[:300]}"}), 500
 
         return jsonify(reading)
 
