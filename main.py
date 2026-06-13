@@ -275,7 +275,7 @@ def calculate_vimshottari_dasha(moon_longitude, birth_jd):
         dasha_start = dasha_end
 
     # Find current dasha
-    today = datetime.now()
+    today = datetime.utcnow()
     current_dasha = None
     current_antardasha = None
 
@@ -403,7 +403,7 @@ def detect_doshas(planets, lagna_rashi_idx, moon_rashi_idx, jd):
 
     # ── Sade Sati (current transit of Saturn relative to natal Moon) ──
     try:
-        now = datetime.now()
+        now = datetime.utcnow()
         jd_now = datetime_to_jd(now)
         saturn_now_lon = get_sidereal_position(jd_now, swe.SATURN)
         saturn_now_rashi = longitude_to_rashi(saturn_now_lon)
@@ -464,12 +464,18 @@ def calculate_chart():
             # Fallback to Bhawanigarh coordinates
             lat, lon = 30.2733, 75.9669
 
-        # Convert to UTC (assume IST = UTC+5:30 for India)
-        # For production, use pytz with proper timezone detection
-        from dateutil import tz
-        india_tz = tz.gettz('Asia/Kolkata')
-        dt_aware = dt_local.replace(tzinfo=india_tz)
-        dt_utc = dt_aware.astimezone(tz.UTC)
+        # Convert to UTC using the actual timezone for the birth location
+        # (handles historical offsets and DST correctly via zoneinfo/tzdata)
+        from zoneinfo import ZoneInfo
+        from timezonefinder import TimezoneFinder
+
+        tf = TimezoneFinder()
+        tz_name = tf.timezone_at(lat=lat, lng=lon)
+        if not tz_name:
+            tz_name = "UTC"  # open ocean or unresolved — fallback
+
+        dt_aware = dt_local.replace(tzinfo=ZoneInfo(tz_name))
+        dt_utc = dt_aware.astimezone(ZoneInfo("UTC"))
 
         # Julian Day
         jd = datetime_to_jd(dt_utc)
@@ -518,7 +524,8 @@ def calculate_chart():
                 "longitude_geo": round(lon, 4),
                 "julian_day": round(jd, 6),
                 "ayanamsa": "Lahiri",
-                "house_system": "Whole Sign"
+                "house_system": "Whole Sign",
+                "timezone": tz_name
             }
         }
 
@@ -623,7 +630,7 @@ CRITICAL INSTRUCTIONS:
 4. Vary sentence rhythm and word choice — do not reuse the same openings or phrases across different focus areas.
 5. For "planetary_influences": pick the 3 most significant planets right now (always include the Mahadasha lord and Antardasha lord, plus one more relevant to the {focus_label} focus). For each, describe in ONE plain-language sentence what that planet is "doing" in real-life terms — e.g. "Saturn is currently shaping how much responsibility you're carrying at work, and may be making a project feel slower than you'd like." No jargon, no house numbers — describe the real-life area and the felt effect.
 6. For the Lal Kitab remedy: choose EXACTLY ONE option from the candidate list below (do not invent a new remedy — pick from this list verbatim or with very minor wording adjustment for natural flow). Pick whichever option best fits {data.get('name', 'Seeker')}'s {focus_label} focus.
-7. If any doshas are listed as active above, briefly acknowledge the most relevant one in the DOSHA_NOTE field — calm, factual, never alarming. If "None notable" or empty, write DOSHA_NOTE as a short reassuring note that no major doshas are currently active.
+7. If any doshas are listed as active above, briefly acknowledge EACH ONE in the DOSHA_NOTE field (not just one) — calm, factual, never alarming, one short sentence per dosha. If "None notable" or empty, write DOSHA_NOTE as a short reassuring note that no major doshas are currently active.
 
 REMEDY CANDIDATES:{remedy_options_text}
 
@@ -647,7 +654,7 @@ Write your reading using EXACTLY this format — plain text with delimiter tags,
 [REMEDY_NAME]The chosen remedy from the candidate list above, stated as a clear short instruction (you may lightly rephrase for flow, but keep the core action and timing intact)[/REMEDY_NAME]
 [REMEDY_WHY]One sentence on why this remedy is suggested for them right now, connected to the planetary influence above — plain language, no jargon.[/REMEDY_WHY]
 [REMEDY_HOW]One sentence describing exactly how and when to do it — simple, doable, low-cost, no special ingredients beyond common household items.[/REMEDY_HOW]
-[DOSHA_NOTE]One to two sentences calmly addressing the most relevant active dosha (or a brief reassuring note if none are active). Plain language, factual tone — never fear-based.[/DOSHA_NOTE]
+[DOSHA_NOTE]One short sentence for EACH active dosha listed above, calmly explaining its real-life effect (or a brief reassuring note if none are active). Plain language, factual tone — never fear-based.[/DOSHA_NOTE]
 
 Tone rules:
 - Never say "the stars say" or "the planets indicate" — just speak directly
