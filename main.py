@@ -204,15 +204,16 @@ def get_sidereal_position(jd, planet):
 
 def longitude_to_rashi(longitude):
     """Convert ecliptic longitude to Rashi index (0-11)"""
-    return int(longitude / 30)
+    return int((longitude % 360) / 30) % 12
 
 def longitude_to_degree_in_rashi(longitude):
     """Get degrees within a Rashi"""
-    return longitude % 30
+    return (longitude % 30 + 30) % 30
 
 def get_nakshatra(moon_longitude):
     """Get Nakshatra from Moon's sidereal longitude"""
-    nak_index = int(moon_longitude / (360 / 27))
+    moon_longitude = moon_longitude % 360
+    nak_index = int(moon_longitude / (360 / 27)) % 27
     nak_pada = int((moon_longitude % (360 / 27)) / (360 / 108)) + 1
     return {
         "index": nak_index,
@@ -464,17 +465,39 @@ def calculate_chart():
             # Fallback to Bhawanigarh coordinates
             lat, lon = 30.2733, 75.9669
 
-        # Convert to UTC using the actual timezone for the birth location
-        # (handles historical offsets and DST correctly via zoneinfo/tzdata)
-        from zoneinfo import ZoneInfo
-        from tzfpy import get_tz
+        # Convert to UTC using a longitude-based standard-time offset estimate.
+        # This is a zero-dependency approach (no external timezone library):
+        # most countries' standard time zones are within ~1 hour of solar
+        # longitude/15, and several major regions use well-known fixed
+        # offsets that don't align to whole hours (e.g. India = UTC+5:30).
+        # NOTE: this ignores daylight-saving time and historical zone
+        # changes. It's a reasonable approximation for astrology purposes,
+        # where Lagna can shift with birth time precision anyway.
+        from datetime import timezone, timedelta
 
-        tz_name = get_tz(lon, lat)  # note: tzfpy takes (lng, lat)
-        if not tz_name:
-            tz_name = "UTC"  # open ocean or unresolved — fallback
+        def estimate_utc_offset(lat, lon):
+            # Known fixed-offset regions (approximate bounding boxes)
+            # India / Sri Lanka: UTC+5:30
+            if 6 <= lat <= 37 and 68 <= lon <= 97:
+                return timedelta(hours=5, minutes=30)
+            # Afghanistan: UTC+4:30
+            if 29 <= lat <= 39 and 60 <= lon <= 75:
+                return timedelta(hours=4, minutes=30)
+            # Iran: UTC+3:30
+            if 25 <= lat <= 40 and 44 <= lon <= 64:
+                return timedelta(hours=3, minutes=30)
+            # Myanmar: UTC+6:30
+            if 9 <= lat <= 29 and 92 <= lon <= 102:
+                return timedelta(hours=6, minutes=30)
+            # Default: round longitude to the nearest 15° (1-hour zone)
+            hours = round(lon / 15)
+            return timedelta(hours=hours)
 
-        dt_aware = dt_local.replace(tzinfo=ZoneInfo(tz_name))
-        dt_utc = dt_aware.astimezone(ZoneInfo("UTC"))
+        offset = estimate_utc_offset(lat, lon)
+        tz_name = f"UTC{'+' if offset.total_seconds() >= 0 else '-'}{abs(offset)}"
+
+        dt_aware = dt_local.replace(tzinfo=timezone(offset))
+        dt_utc = dt_aware.astimezone(timezone.utc)
 
         # Julian Day
         jd = datetime_to_jd(dt_utc)
@@ -531,6 +554,8 @@ def calculate_chart():
         return jsonify(response)
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
