@@ -929,6 +929,9 @@ def generate_reading():
 
         prompt = f"""You are Vayuman — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
 
+{"" if focus_key == "general" else f'''⚠️ THIS IS A FOCUSED READING ABOUT: {focus_label.upper()} ⚠️
+{data.get("name", "Seeker")} specifically asked for guidance on {focus_label} — NOT a general life overview. The [TODAY] field below MUST be a deep, dedicated analysis of {focus_label} specifically. Do not write a generic "your day overall" summary. Every sentence in [TODAY] should relate to {focus_label}.
+'''}
 Generate a personalised, REAL-TIME Vedic astrology reading for {data.get('name', 'Seeker')} for {data.get('today')}.
 
 Their Vedic chart details:
@@ -939,7 +942,7 @@ Their Vedic chart details:
 - Current Antardasha: {antardasha}
 - Planetary placements (house positions relative to their Lagna): {planets_summary}
 - Active doshas in this chart: {data.get('active_doshas', 'None notable')}
-- PRIMARY FOCUS REQUESTED: {focus_label}
+- PRIMARY FOCUS REQUESTED: {focus_label.upper()}{"" if focus_key == "general" else " (THIS IS NOT A GENERAL READING — see warning above)"}
 
 LANGUAGE: {language_instruction}
 
@@ -951,6 +954,7 @@ CRITICAL INSTRUCTIONS:
 5. For "planetary_influences": pick the 3 most significant planets right now (always include the Mahadasha lord and Antardasha lord, plus one more relevant to the {focus_label} focus). For each, describe in ONE plain-language sentence what that planet is "doing" in real-life terms — e.g. "Saturn is currently shaping how much responsibility you're carrying at work, and may be making a project feel slower than you'd like." No jargon, no house numbers — describe the real-life area and the felt effect.
 6. For the Lal Kitab remedy: choose EXACTLY ONE option from the candidate list below (do not invent a new remedy — pick from this list verbatim or with very minor wording adjustment for natural flow). Pick whichever option best fits {data.get('name', 'Seeker')}'s {focus_label} focus.
 7. If any doshas are listed as active above, briefly acknowledge EACH ONE in the DOSHA_NOTE field (not just one) — calm, factual, never alarming, one short sentence per dosha. If "None notable" or empty, write DOSHA_NOTE as a short reassuring note that no major doshas are currently active.
+{"" if focus_key == "general" else f'''8. FINAL CHECK before writing [TODAY]: re-read it after drafting — if it could apply to someone who asked about a DIFFERENT focus area (or no focus at all), rewrite it. It must be unmistakably about {focus_label}.'''}
 
 REMEDY CANDIDATES:{remedy_options_text}
 
