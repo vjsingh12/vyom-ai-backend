@@ -559,7 +559,7 @@ def calculate_chart():
         return jsonify({"error": str(e)}), 500
 
 
-def call_groq(prompt, api_key, temperature=0.9, max_tokens=1900):
+def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
     """Call Groq's chat completion API and return the raw text response."""
     payload = json.dumps({
         "model": "llama-3.3-70b-versatile",
@@ -771,11 +771,12 @@ Their question:
 "{question}"
 
 INSTRUCTIONS:
-1. Answer their actual question directly — don't deflect into generic advice. If they ask about a specific situation (e.g. "should I take this job", "will my relationship work out", "is this a good time to invest"), engage with that specific situation using their chart data.
-2. Ground your answer in their actual planetary placements — reference the relevant life area (career, relationships, finances, etc.) and which planet is influencing it, in plain language (no "8th house" type jargon).
-3. Be honest and specific — including about likely challenges or timing concerns, not just reassurance. A wise guide tells the truth kindly, not just what someone wants to hear.
-4. Length: 4-7 sentences. Warm but substantive — this should feel like real guidance, not a fortune cookie.
-5. End with one grounded, practical next step they can take.
+1. First, check whether the question is a genuine, coherent question (even if vague, casual, or oddly phrased). If it's gibberish, random characters, a string of unrelated words, or otherwise doesn't form a real question — gently and warmly ask them to rephrase or share what's actually on their mind. Do NOT invent an astrological answer to nonsense. Keep this redirect short (1-3 sentences) and kind, e.g. "I want to make sure I understand you properly — could you share a bit more about what's on your mind?"
+2. If it IS a genuine question, answer it directly — don't deflect into generic advice. If they ask about a specific situation (e.g. "should I take this job", "will my relationship work out", "is this a good time to invest"), engage with that specific situation using their chart data.
+3. Ground your answer in their actual planetary placements — reference the relevant life area (career, relationships, finances, etc.) and which planet is influencing it, in plain language (no "8th house" type jargon).
+4. Be honest and specific — including about likely challenges or timing concerns, not just reassurance. A wise guide tells the truth kindly, not just what someone wants to hear.
+5. Length: 4-7 sentences for genuine questions. Warm but substantive — this should feel like real guidance, not a fortune cookie.
+6. End with one grounded, practical next step they can take (only for genuine questions).
 
 Respond with ONLY your answer as plain text — no JSON, no markdown formatting, no headers."""
 
