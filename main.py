@@ -888,46 +888,42 @@ def generate_reading():
             'finances': 'Jupiter'
         }
 
-        # Build a candidate remedy list. For a focused reading, that area's
-        # traditional significator planet goes FIRST (and is the strongly
-        # preferred choice), with the Mahadasha/Antardasha lords as fallback
-        # context — this prevents the AI from defaulting to the same
-        # dasha-lord remedy regardless of which focus area was chosen.
-        remedy_candidates = []
+        # Deterministically pick the remedy planet + specific remedy option in
+        # Python (rather than asking the AI to "choose" from a list) — this
+        # guarantees the remedy actually varies by focus area, since the AI
+        # was found to converge on the same remedy regardless of which
+        # candidates were listed or how strongly the instructions emphasized
+        # the choice.
+        #
+        # - Focused readings: use that area's traditional significator planet
+        #   (Saturn/Venus/Mars/Jupiter for career/relationships/health/finances)
+        # - General readings: use the Mahadasha lord (falling back to
+        #   Antardasha lord, then Jupiter)
         if focus_key in FOCUS_SIGNIFICATORS:
-            candidate_lords = [FOCUS_SIGNIFICATORS[focus_key], dasha_lord, antardasha]
+            remedy_lord = FOCUS_SIGNIFICATORS[focus_key]
+        elif dasha_lord in LAL_KITAB_REMEDIES:
+            remedy_lord = dasha_lord
+        elif antardasha in LAL_KITAB_REMEDIES:
+            remedy_lord = antardasha
         else:
-            candidate_lords = [dasha_lord, antardasha]
+            remedy_lord = "Jupiter"
 
-        for lord in candidate_lords:
-            if lord in LAL_KITAB_REMEDIES and lord not in [c[0] for c in remedy_candidates]:
-                remedy_candidates.append((lord, LAL_KITAB_REMEDIES[lord]))
+        remedy_options = LAL_KITAB_REMEDIES.get(remedy_lord, LAL_KITAB_REMEDIES["Jupiter"])
+        # Pick a specific option deterministically per-person (so different
+        # users don't all get the exact same wording for the same planet),
+        # using their birth details as a stable seed.
+        seed_str = f"{data.get('name','')}{data.get('dob','')}{remedy_lord}"
+        option_index = sum(ord(c) for c in seed_str) % len(remedy_options)
+        chosen_remedy = remedy_options[option_index]
 
-        remedy_options_text = ""
-        for lord, options in remedy_candidates:
-            remedy_options_text += f"\nFor {lord}, choose from:\n"
-            for opt in options:
-                remedy_options_text += f"- {opt}\n"
-
-        # Always offer a "patience / let the period pass" option as a last
-        # resort, in case none of the planet-specific remedies feel right
-        # for this particular focus + chart combination.
-        patience_subject = antardasha or dasha_lord or "the current planetary period"
-        remedy_options_text += (
-            f"\nIf none of the above genuinely fits {focus_label} right now, "
-            f"you may instead offer this patience-based option:\n"
-            f"- Patience and steady routine: this is a Lal Kitab principle that "
-            f"some planetary periods simply need to be weathered rather than "
-            f"countered. Keep your daily routine steady, avoid major decisions "
-            f"in this area for now, and let the current {patience_subject} "
-            f"period run its course — its influence will ease with time.\n"
+        remedy_instruction_text = (
+            f"The remedy has ALREADY been chosen for this person — it relates to {remedy_lord}. "
+            f"REMEDY_NAME must restate this remedy (you may lightly rephrase for natural flow, "
+            f"but keep the core action, object, and timing intact — do not change it to a "
+            f"different remedy or different planet):\n\"{chosen_remedy}\"\n"
+            f"REMEDY_WHY must explain in one sentence why a {remedy_lord} remedy is relevant "
+            f"to {focus_label} specifically, connected to this person's chart."
         )
-
-        if not remedy_options_text:
-            # Fallback: offer Jupiter's remedies (generally benign/positive)
-            remedy_options_text = "\nFor Jupiter, choose from:\n"
-            for opt in LAL_KITAB_REMEDIES["Jupiter"]:
-                remedy_options_text += f"- {opt}\n"
 
         lang_code = data.get('lang', 'en')
         lang_name = LANGUAGE_NAMES.get(lang_code, 'English')
@@ -970,11 +966,9 @@ CRITICAL INSTRUCTIONS:
 3. Avoid soft, vague, feel-good filler ("things will work out", "stay positive"). Be SPECIFIC and grounded — name a likely situation, a real tension, or a concrete opportunity based on the chart data. It's okay to mention a challenge or friction, not just positives.
 4. Vary sentence rhythm and word choice — do not reuse the same openings or phrases across different focus areas.
 5. For "planetary_influences": pick the 3 most significant planets right now (always include the Mahadasha lord and Antardasha lord, plus one more relevant to the {focus_label} focus). For each, describe in ONE plain-language sentence what that planet is "doing" in real-life terms — e.g. "Saturn is currently shaping how much responsibility you're carrying at work, and may be making a project feel slower than you'd like." No jargon, no house numbers — describe the real-life area and the felt effect.
-6. For the Lal Kitab remedy: choose EXACTLY ONE option from the candidate list below (do not invent a new remedy — pick from this list verbatim or with very minor wording adjustment for natural flow).{"" if focus_key == "general" else f" This is a {focus_label} focus — the FIRST planet listed in the candidates below is that area's traditional significator and should be your PRIMARY choice unless it genuinely doesn't fit this person's chart, in which case use one of the other candidates or the patience-based option."} Pick whichever option best fits {data.get('name', 'Seeker')}'s {focus_label} focus, and explain in REMEDY_WHY specifically how it relates to {focus_label} (not a generic explanation).
+6. {remedy_instruction_text}
 7. If any doshas are listed as active above, briefly acknowledge EACH ONE in the DOSHA_NOTE field (not just one) — calm, factual, never alarming, one short sentence per dosha. If "None notable" or empty, write DOSHA_NOTE as a short reassuring note that no major doshas are currently active.
 {"" if focus_key == "general" else f'''8. FINAL CHECK before writing [TODAY]: re-read it after drafting — if it could apply to someone who asked about a DIFFERENT focus area (or no focus at all), rewrite it. It must be unmistakably about {focus_label}.'''}
-
-REMEDY CANDIDATES:{remedy_options_text}
 
 Write your reading using EXACTLY this format — plain text with delimiter tags, no JSON, no markdown, no backticks. Write naturally, including apostrophes and quotes as needed within the text:
 
