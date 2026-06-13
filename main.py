@@ -888,12 +888,16 @@ def generate_reading():
             'finances': 'Jupiter'
         }
 
-        # Build a candidate remedy list from the Mahadasha lord, Antardasha lord,
-        # and (if a specific focus was chosen) that area's significator planet
+        # Build a candidate remedy list. For a focused reading, that area's
+        # traditional significator planet goes FIRST (and is the strongly
+        # preferred choice), with the Mahadasha/Antardasha lords as fallback
+        # context — this prevents the AI from defaulting to the same
+        # dasha-lord remedy regardless of which focus area was chosen.
         remedy_candidates = []
-        candidate_lords = [dasha_lord, antardasha]
         if focus_key in FOCUS_SIGNIFICATORS:
-            candidate_lords.append(FOCUS_SIGNIFICATORS[focus_key])
+            candidate_lords = [FOCUS_SIGNIFICATORS[focus_key], dasha_lord, antardasha]
+        else:
+            candidate_lords = [dasha_lord, antardasha]
 
         for lord in candidate_lords:
             if lord in LAL_KITAB_REMEDIES and lord not in [c[0] for c in remedy_candidates]:
@@ -904,6 +908,20 @@ def generate_reading():
             remedy_options_text += f"\nFor {lord}, choose from:\n"
             for opt in options:
                 remedy_options_text += f"- {opt}\n"
+
+        # Always offer a "patience / let the period pass" option as a last
+        # resort, in case none of the planet-specific remedies feel right
+        # for this particular focus + chart combination.
+        patience_subject = antardasha or dasha_lord or "the current planetary period"
+        remedy_options_text += (
+            f"\nIf none of the above genuinely fits {focus_label} right now, "
+            f"you may instead offer this patience-based option:\n"
+            f"- Patience and steady routine: this is a Lal Kitab principle that "
+            f"some planetary periods simply need to be weathered rather than "
+            f"countered. Keep your daily routine steady, avoid major decisions "
+            f"in this area for now, and let the current {patience_subject} "
+            f"period run its course — its influence will ease with time.\n"
+        )
 
         if not remedy_options_text:
             # Fallback: offer Jupiter's remedies (generally benign/positive)
@@ -952,7 +970,7 @@ CRITICAL INSTRUCTIONS:
 3. Avoid soft, vague, feel-good filler ("things will work out", "stay positive"). Be SPECIFIC and grounded — name a likely situation, a real tension, or a concrete opportunity based on the chart data. It's okay to mention a challenge or friction, not just positives.
 4. Vary sentence rhythm and word choice — do not reuse the same openings or phrases across different focus areas.
 5. For "planetary_influences": pick the 3 most significant planets right now (always include the Mahadasha lord and Antardasha lord, plus one more relevant to the {focus_label} focus). For each, describe in ONE plain-language sentence what that planet is "doing" in real-life terms — e.g. "Saturn is currently shaping how much responsibility you're carrying at work, and may be making a project feel slower than you'd like." No jargon, no house numbers — describe the real-life area and the felt effect.
-6. For the Lal Kitab remedy: choose EXACTLY ONE option from the candidate list below (do not invent a new remedy — pick from this list verbatim or with very minor wording adjustment for natural flow). Pick whichever option best fits {data.get('name', 'Seeker')}'s {focus_label} focus.
+6. For the Lal Kitab remedy: choose EXACTLY ONE option from the candidate list below (do not invent a new remedy — pick from this list verbatim or with very minor wording adjustment for natural flow).{"" if focus_key == "general" else f" This is a {focus_label} focus — the FIRST planet listed in the candidates below is that area's traditional significator and should be your PRIMARY choice unless it genuinely doesn't fit this person's chart, in which case use one of the other candidates or the patience-based option."} Pick whichever option best fits {data.get('name', 'Seeker')}'s {focus_label} focus, and explain in REMEDY_WHY specifically how it relates to {focus_label} (not a generic explanation).
 7. If any doshas are listed as active above, briefly acknowledge EACH ONE in the DOSHA_NOTE field (not just one) — calm, factual, never alarming, one short sentence per dosha. If "None notable" or empty, write DOSHA_NOTE as a short reassuring note that no major doshas are currently active.
 {"" if focus_key == "general" else f'''8. FINAL CHECK before writing [TODAY]: re-read it after drafting — if it could apply to someone who asked about a DIFFERENT focus area (or no focus at all), rewrite it. It must be unmistakably about {focus_label}.'''}
 
