@@ -1,5 +1,5 @@
 """
-Vyom AI — Vedic Astrology Calculation Engine
+Vayuman — Vedic Astrology Calculation Engine
 Using Swiss Ephemeris (pyswisseph) with Lahiri Ayanamsa
 Accurate Lagna, Rashi, Nakshatra, Vimshottari Dasha calculations
 """
@@ -64,6 +64,15 @@ PLANET_NAMES = {
 # Curated Lal Kitab remedy library — paraphrased from multiple traditional sources,
 # filtered to keep only safe, simple, low-cost, non-violent actions.
 # Each planet has several candidate remedies; the AI selects and personalises ONE.
+LANGUAGE_NAMES = {
+    'en': 'English',
+    'hi': 'Hindi',
+    'pa': 'Punjabi',
+    'ta': 'Tamil',
+    'te': 'Telugu',
+    'zh': 'Chinese (Simplified)'
+}
+
 LAL_KITAB_REMEDIES = {
     "Sun": [
         "Offer water to the rising Sun each morning, facing east",
@@ -172,7 +181,7 @@ def get_coordinates(place_name):
     try:
         query = urllib.parse.quote(place_name.split(',')[0].strip())
         url = f"https://geocoding-api.open-meteo.com/v1/search?name={query}&count=1"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (VyomAI/1.0)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (VayuMan/1.0)"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             result = json.loads(resp.read().decode('utf-8'))
         if result.get("results"):
@@ -574,7 +583,7 @@ def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Mozilla/5.0 (VyomAI/1.0)"
+            "User-Agent": "Mozilla/5.0 (VayuMan/1.0)"
         },
         method="POST"
     )
@@ -615,9 +624,23 @@ def generate_reading():
         antardasha = data.get('antardasha', '')
         dasha_lord = data.get('dashaLord', '')
 
-        # Build a candidate remedy list from the Mahadasha lord and Antardasha lord
+        # Traditional significator planet for each focus area — used to widen
+        # the remedy candidate pool when the user asks about a specific area
+        FOCUS_SIGNIFICATORS = {
+            'career': 'Saturn',
+            'relationships': 'Venus',
+            'health': 'Mars',
+            'finances': 'Jupiter'
+        }
+
+        # Build a candidate remedy list from the Mahadasha lord, Antardasha lord,
+        # and (if a specific focus was chosen) that area's significator planet
         remedy_candidates = []
-        for lord in [dasha_lord, antardasha]:
+        candidate_lords = [dasha_lord, antardasha]
+        if focus_key in FOCUS_SIGNIFICATORS:
+            candidate_lords.append(FOCUS_SIGNIFICATORS[focus_key])
+
+        for lord in candidate_lords:
             if lord in LAL_KITAB_REMEDIES and lord not in [c[0] for c in remedy_candidates]:
                 remedy_candidates.append((lord, LAL_KITAB_REMEDIES[lord]))
 
@@ -633,7 +656,23 @@ def generate_reading():
             for opt in LAL_KITAB_REMEDIES["Jupiter"]:
                 remedy_options_text += f"- {opt}\n"
 
-        prompt = f"""You are Vyom AI — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
+        lang_code = data.get('lang', 'en')
+        lang_name = LANGUAGE_NAMES.get(lang_code, 'English')
+        if lang_code == 'en':
+            language_instruction = "Respond entirely in English."
+        else:
+            language_instruction = (
+                f"Respond ENTIRELY in {lang_name}, written naturally and fluently in {lang_name}'s "
+                f"native script (not transliterated/romanized). This includes every field below — "
+                f"the planetary influences, today's insight, all life areas, the action, the remedy "
+                f"(translate the remedy instruction itself into {lang_name} too, keeping its core "
+                f"action and timing intact), and the dosha note. "
+                f"Keep planet names, 'Vayuman', and sign/dasha names (e.g. Mahadasha, Kanya) as-is "
+                f"if there is no natural {lang_name} equivalent, but write all surrounding sentences "
+                f"in {lang_name}."
+            )
+
+        prompt = f"""You are Vayuman — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
 
 Generate a personalised, REAL-TIME Vedic astrology reading for {data.get('name', 'Seeker')} for {data.get('today')}.
 
@@ -646,6 +685,8 @@ Their Vedic chart details:
 - Planetary placements (house positions relative to their Lagna): {planets_summary}
 - Active doshas in this chart: {data.get('active_doshas', 'None notable')}
 - PRIMARY FOCUS REQUESTED: {focus_label}
+
+LANGUAGE: {language_instruction}
 
 CRITICAL INSTRUCTIONS:
 1. The "today" field MUST be primarily about {focus_label} — this is what {data.get('name', 'Seeker')} specifically asked about. Reference the relevant planet's house placement from the data above to ground this in their actual chart (in plain language, no jargon).
@@ -669,11 +710,11 @@ Write your reading using EXACTLY this format — plain text with delimiter tags,
 [INFLUENCE3_PLANET]PlanetName[/INFLUENCE3_PLANET]
 [INFLUENCE3_HEADLINE]...[/INFLUENCE3_HEADLINE]
 [INFLUENCE3_EFFECT]...[/INFLUENCE3_EFFECT]
-[TODAY]4-5 sentences, primarily about {focus_label}, grounded in their actual planetary placements. Specific, real, and direct — not generic.[/TODAY]
-[LOVE]2-3 sentences about relationships this week. Specific and actionable.[/LOVE]
-[CAREER]2-3 sentences about work and purpose this week.[/CAREER]
-[HEALTH]2-3 sentences about energy and physical wellbeing.[/HEALTH]
-[FINANCE]2-3 sentences about money and material matters.[/FINANCE]
+[TODAY]{"4-5 sentences, primarily about overall life" if focus_key == "general" else f"6-8 sentences, primarily and DEEPLY about {focus_label}"}, grounded in their actual planetary placements. Specific, real, and direct — not generic.{"" if focus_key == "general" else " Since this is a focused reading, go beyond surface-level: analyze the current planetary influences on this specific area in practical detail — what's actively helping, what's creating friction, realistic timing considerations, and what a thoughtful person in this position should actually understand about their situation right now."}[/TODAY]
+[LOVE]2-3 sentences about relationships right now, based on current planetary influences. Specific and actionable.[/LOVE]
+[CAREER]2-3 sentences about work and purpose right now, based on current planetary influences.[/CAREER]
+[HEALTH]2-3 sentences about energy and physical wellbeing right now, based on current planetary influences.[/HEALTH]
+[FINANCE]2-3 sentences about money and material matters right now, based on current planetary influences.[/FINANCE]
 [ACTION]One clear, specific, poetic action they should take today, directly tied to the {focus_label} focus. Make it beautiful and doable. No more than 2 sentences.[/ACTION]
 [REMEDY_NAME]The chosen remedy from the candidate list above, stated as a clear short instruction (you may lightly rephrase for flow, but keep the core action and timing intact)[/REMEDY_NAME]
 [REMEDY_WHY]One sentence on why this remedy is suggested for them right now, connected to the planetary influence above — plain language, no jargon.[/REMEDY_WHY]
@@ -689,7 +730,7 @@ Tone rules:
 
 Output ONLY the tagged sections above, nothing else — no preamble, no closing remarks."""
 
-        raw_text = call_groq(prompt, api_key)
+        raw_text = call_groq(prompt, api_key, max_tokens=3200)
 
         def extract(tag, text):
             m = re.search(rf'\[{tag}\](.*?)\[/{tag}\]', text, re.DOTALL)
@@ -754,7 +795,18 @@ def ask_vyom():
         if not question:
             return jsonify({"error": "No question provided"}), 400
 
-        prompt = f"""You are Vyom AI — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, direct, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
+        lang_code = data.get('lang', 'en')
+        lang_name = LANGUAGE_NAMES.get(lang_code, 'English')
+        if lang_code == 'en':
+            ask_language_instruction = "Respond entirely in English."
+        else:
+            ask_language_instruction = (
+                f"Respond ENTIRELY in {lang_name}, written naturally and fluently in {lang_name}'s "
+                f"native script (not transliterated/romanized). Keep planet names and 'Vayuman' as-is "
+                f"if there is no natural {lang_name} equivalent, but write all sentences in {lang_name}."
+            )
+
+        prompt = f"""You are Vayuman — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, direct, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
 
 {data.get('name', 'Seeker')} has come to you with a real question about their life. Use their actual Vedic chart to answer it honestly and specifically — this is a real-time consultation, not a generic horoscope.
 
@@ -769,6 +821,8 @@ Their Vedic chart details:
 
 Their question:
 "{question}"
+
+LANGUAGE: {ask_language_instruction}
 
 INSTRUCTIONS:
 1. First, check whether the question is a genuine, coherent question (even if vague, casual, or oddly phrased). If it's gibberish, random characters, a string of unrelated words, or otherwise doesn't form a real question — gently and warmly ask them to rephrase or share what's actually on their mind. Do NOT invent an astrological answer to nonsense. Keep this redirect short (1-3 sentences) and kind, e.g. "I want to make sure I understand you properly — could you share a bit more about what's on your mind?"
@@ -794,7 +848,7 @@ Respond with ONLY your answer as plain text — no JSON, no markdown formatting,
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "Vyom AI engine is running", "engine": "Swiss Ephemeris + Lahiri Ayanamsa"})
+    return jsonify({"status": "Vayuman engine is running", "engine": "Swiss Ephemeris + Lahiri Ayanamsa"})
 
 
 if __name__ == '__main__':
