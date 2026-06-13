@@ -35,8 +35,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 USE_POSTGRES = bool(DATABASE_URL)
 
 if USE_POSTGRES:
-    import psycopg2
-    import psycopg2.extras
+    import psycopg
+    from psycopg.rows import dict_row
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vayuman.db")
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me-in-production")
@@ -50,8 +50,8 @@ class DB:
 
     def __init__(self):
         if USE_POSTGRES:
-            self.conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-            self.cur = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            self.conn = psycopg.connect(DATABASE_URL, sslmode='require', row_factory=dict_row)
+            self.cur = self.conn.cursor()
         else:
             self.conn = sqlite3.connect(DB_PATH)
             self.conn.row_factory = sqlite3.Row
