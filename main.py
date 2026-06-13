@@ -12,12 +12,267 @@ import math
 import os
 import json
 import re
+import sqlite3
 import urllib.request
 import urllib.parse
 import urllib.error
+from werkzeug.security import generate_password_hash, check_password_hash
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 app = Flask(__name__)
 CORS(app)  # Allow requests from your website
+
+# ── AUTH / ACCOUNTS ──────────────────────────────────────────────────────────
+# Lightweight, dependency-free auth: SQLite for users & saved birth profiles,
+# stateless signed tokens (no server-side session table needed).
+#
+# Uses Postgres (e.g. a free Supabase project) when DATABASE_URL is set —
+# this is what should be configured on Render for persistent storage across
+# deploys. Falls back to a local SQLite file when DATABASE_URL is absent
+# (useful for local development/testing).
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+USE_POSTGRES = bool(DATABASE_URL)
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vayuman.db")
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me-in-production")
+serializer = URLSafeTimedSerializer(SECRET_KEY)
+TOKEN_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
+
+
+class DB:
+    """Tiny wrapper so the rest of the code doesn't care whether it's
+    talking to Postgres (Supabase) or SQLite (local fallback)."""
+
+    def __init__(self):
+        if USE_POSTGRES:
+            self.conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+            self.cur = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        else:
+            self.conn = sqlite3.connect(DB_PATH)
+            self.conn.row_factory = sqlite3.Row
+            self.cur = self.conn.cursor()
+
+    def execute(self, sql, params=()):
+        if USE_POSTGRES:
+            sql = sql.replace('?', '%s')
+        self.cur.execute(sql, params)
+        return self
+
+    def fetchone(self):
+        row = self.cur.fetchone()
+        return dict(row) if row else None
+
+    def fetchall(self):
+        return [dict(r) for r in self.cur.fetchall()]
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.cur.close()
+        self.conn.close()
+
+    def insert_returning_id(self, sql, params, table_for_sqlite, pk_for_sqlite="id"):
+        """INSERT that returns the new row's id, on either backend."""
+        if USE_POSTGRES:
+            sql = sql.rstrip().rstrip(';') + " RETURNING id"
+            self.execute(sql, params)
+            new_id = self.cur.fetchone()['id']
+        else:
+            self.execute(sql, params)
+            new_id = self.cur.lastrowid
+        return new_id
+
+
+def get_db():
+    return DB()
+
+
+def init_db():
+    db = get_db()
+    if USE_POSTGRES:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS profiles (
+                id SERIAL PRIMARY KEY,
+                email TEXT NOT NULL,
+                name TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                dob TEXT NOT NULL,
+                tob TEXT NOT NULL,
+                pob TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+    else:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                name TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                dob TEXT NOT NULL,
+                tob TEXT NOT NULL,
+                pob TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+    db.commit()
+    db.close()
+
+
+init_db()
+
+
+def generate_token(email):
+    return serializer.dumps(email)
+
+
+def verify_token(token):
+    try:
+        return serializer.loads(token, max_age=TOKEN_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
+
+
+def get_authenticated_email():
+    """Returns the email for the Bearer token in the Authorization header, or None."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    return verify_token(auth[len("Bearer "):])
+
+
+@app.route('/signup', methods=['POST'])
+def signup():
+    data = request.get_json(force=True)
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+
+    if not email or '@' not in email:
+        return jsonify({"error": "Please enter a valid email address."}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters."}), 400
+
+    conn = get_db()
+    existing = conn.execute("SELECT email FROM users WHERE email = ?", (email,)).fetchone()
+    if existing:
+        conn.close()
+        return jsonify({"error": "An account with this email already exists. Try signing in instead."}), 409
+
+    password_hash = generate_password_hash(password)
+    conn.execute(
+        "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
+        (email, password_hash, datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+    token = generate_token(email)
+    return jsonify({"token": token, "email": email})
+
+
+@app.route('/signin', methods=['POST'])
+def signin():
+    data = request.get_json(force=True)
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+
+    if not email or not password:
+        return jsonify({"error": "Please enter both email and password."}), 400
+
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    conn.close()
+
+    if not user or not check_password_hash(user["password_hash"], password):
+        return jsonify({"error": "Incorrect email or password."}), 401
+
+    token = generate_token(email)
+    return jsonify({"token": token, "email": email})
+
+
+@app.route('/profiles', methods=['GET'])
+def list_profiles():
+    email = get_authenticated_email()
+    if not email:
+        return jsonify({"error": "Not authenticated."}), 401
+
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, relation, dob, tob, pob FROM profiles WHERE email = ? ORDER BY created_at ASC",
+        (email,)
+    ).fetchall()
+    conn.close()
+
+    return jsonify({"profiles": rows})
+
+
+@app.route('/profiles', methods=['POST'])
+def add_profile():
+    email = get_authenticated_email()
+    if not email:
+        return jsonify({"error": "Not authenticated."}), 401
+
+    data = request.get_json(force=True)
+    name = (data.get('name') or '').strip()
+    relation = (data.get('relation') or '').strip()
+    dob = (data.get('dob') or '').strip()
+    tob = (data.get('tob') or '').strip()
+    pob = (data.get('pob') or '').strip()
+
+    if not all([name, relation, dob, tob, pob]):
+        return jsonify({"error": "Please fill in all fields."}), 400
+
+    conn = get_db()
+    new_id = conn.insert_returning_id(
+        "INSERT INTO profiles (email, name, relation, dob, tob, pob, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (email, name, relation, dob, tob, pob, datetime.utcnow().isoformat()),
+        table_for_sqlite="profiles"
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({"id": new_id, "name": name, "relation": relation, "dob": dob, "tob": tob, "pob": pob})
+
+
+@app.route('/profiles/<int:profile_id>', methods=['DELETE'])
+def delete_profile(profile_id):
+    email = get_authenticated_email()
+    if not email:
+        return jsonify({"error": "Not authenticated."}), 401
+
+    conn = get_db()
+    row = conn.execute("SELECT email FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+    if not row or row["email"] != email:
+        conn.close()
+        return jsonify({"error": "Profile not found."}), 404
+
+    conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True})
+
+
 
 # ── CONSTANTS ──────────────────────────────────────────────────────────────
 
