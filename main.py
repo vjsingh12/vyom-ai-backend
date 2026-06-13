@@ -467,10 +467,9 @@ def calculate_chart():
         # Convert to UTC using the actual timezone for the birth location
         # (handles historical offsets and DST correctly via zoneinfo/tzdata)
         from zoneinfo import ZoneInfo
-        from timezonefinder import TimezoneFinder
+        from tzfpy import get_tz
 
-        tf = TimezoneFinder()
-        tz_name = tf.timezone_at(lat=lat, lng=lon)
+        tz_name = get_tz(lon, lat)  # note: tzfpy takes (lng, lat)
         if not tz_name:
             tz_name = "UTC"  # open ocean or unresolved — fallback
 
