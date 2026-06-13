@@ -970,15 +970,15 @@ Write your reading using EXACTLY this format — plain text with delimiter tags,
 [INFLUENCE3_HEADLINE]...[/INFLUENCE3_HEADLINE]
 [INFLUENCE3_EFFECT]...[/INFLUENCE3_EFFECT]
 [TODAY]{"4-5 sentences, primarily about overall life" if focus_key == "general" else f"6-8 sentences, primarily and DEEPLY about {focus_label}"}, grounded in their actual planetary placements. Specific, real, and direct — not generic.{"" if focus_key == "general" else " Since this is a focused reading, go beyond surface-level: analyze the current planetary influences on this specific area in practical detail — what's actively helping, what's creating friction, realistic timing considerations, and what a thoughtful person in this position should actually understand about their situation right now."}[/TODAY]
-[LOVE]2-3 sentences about relationships right now, based on current planetary influences. Specific and actionable.[/LOVE]
+{"" if focus_key != "general" else '''[LOVE]2-3 sentences about relationships right now, based on current planetary influences. Specific and actionable.[/LOVE]
 [CAREER]2-3 sentences about work and purpose right now, based on current planetary influences.[/CAREER]
 [HEALTH]2-3 sentences about energy and physical wellbeing right now, based on current planetary influences.[/HEALTH]
-[FINANCE]2-3 sentences about money and material matters right now, based on current planetary influences.[/FINANCE]
-[ACTION]One clear, specific, poetic action they should take today, directly tied to the {focus_label} focus. Make it beautiful and doable. No more than 2 sentences.[/ACTION]
+[FINANCE]2-3 sentences about money and material matters right now, based on current planetary influences.[/FINANCE]'''}
+{"" if focus_key != "general" else f'''[ACTION]One clear, specific, poetic action they should take today, directly tied to the {focus_label} focus. Make it beautiful and doable. No more than 2 sentences.[/ACTION]'''}
 [REMEDY_NAME]The chosen remedy from the candidate list above, stated as a clear short instruction (you may lightly rephrase for flow, but keep the core action and timing intact)[/REMEDY_NAME]
 [REMEDY_WHY]One sentence on why this remedy is suggested for them right now, connected to the planetary influence above — plain language, no jargon.[/REMEDY_WHY]
 [REMEDY_HOW]One sentence describing exactly how and when to do it — simple, doable, low-cost, no special ingredients beyond common household items.[/REMEDY_HOW]
-[DOSHA_NOTE]One short sentence for EACH active dosha listed above, calmly explaining its real-life effect (or a brief reassuring note if none are active). Plain language, factual tone — never fear-based.[/DOSHA_NOTE]
+{"" if focus_key != "general" else '''[DOSHA_NOTE]One short sentence for EACH active dosha listed above, calmly explaining its real-life effect (or a brief reassuring note if none are active). Plain language, factual tone — never fear-based.[/DOSHA_NOTE]'''}
 
 Tone rules:
 - Never say "the stars say" or "the planets indicate" — just speak directly
