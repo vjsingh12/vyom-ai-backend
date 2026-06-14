@@ -1013,6 +1013,11 @@ def generate_reading():
         active_doshas_raw = data.get('active_doshas', '') or ''
         active_doshas_lower = active_doshas_raw.lower()
 
+        # First name only, with first letter capitalized, for direct address
+        full_name = (data.get('name') or 'Seeker').strip()
+        first_name = full_name.split()[0] if full_name.split() else 'Seeker'
+        first_name = first_name[:1].upper() + first_name[1:] if first_name else 'Seeker'
+
         # Traditional significator planet for each focus area
         FOCUS_SIGNIFICATORS = {
             'career': 'Saturn',
@@ -1150,7 +1155,7 @@ LANGUAGE: {language_instruction}
 {time_arc_instruction}
 
 CRITICAL INSTRUCTIONS:
-0. The "today" field MUST open by addressing {data.get('name', 'Seeker')} directly by name in the first sentence. This is required, not optional.
+0. The "today" field MUST open by addressing {first_name} directly by first name in the first sentence. This is required, not optional.
 1. The "today" field MUST be primarily about {focus_label} — this is what {data.get('name', 'Seeker')} specifically asked about. Reference the relevant planet's house placement from the data above to ground this in their actual chart (in plain language, no jargon).
 2. Do NOT default to generic "overall life" advice — every reading must feel distinctly different depending on the focus area and the actual planetary placements given.
 3. Avoid soft, vague, feel-good filler ("things will work out", "stay positive"). Be SPECIFIC and grounded — name a likely situation, a real tension, or a concrete opportunity based on the chart data. It's okay to mention a challenge or friction, not just positives.
@@ -1171,7 +1176,7 @@ Write your reading using EXACTLY this format — plain text with delimiter tags,
 [INFLUENCE3_PLANET]PlanetName[/INFLUENCE3_PLANET]
 [INFLUENCE3_HEADLINE]...[/INFLUENCE3_HEADLINE]
 [INFLUENCE3_EFFECT]...[/INFLUENCE3_EFFECT]
-[TODAY]MUST begin by addressing the person directly by their name "{data.get('name', 'Seeker')}" in the very first sentence (e.g. "{data.get('name', 'Seeker')}, ..."). Then continue with {"4-5 sentences, primarily about overall life" if focus_key == "general" else f"6-8 sentences, primarily and DEEPLY about {focus_label}"}, grounded in their actual planetary placements. Specific, real, and direct — not generic.{"" if focus_key == "general" else " Since this is a focused reading, go beyond surface-level: analyze the current planetary influences on this specific area in practical detail — what's actively helping, what's creating friction, realistic timing considerations, and what a thoughtful person in this position should actually understand about their situation right now."}[/TODAY]
+[TODAY]MUST begin by addressing the person directly by their first name "{first_name}" in the very first sentence (e.g. "{first_name}, ..."). Then continue with {"4-5 sentences, primarily about overall life" if focus_key == "general" else f"6-8 sentences, primarily and DEEPLY about {focus_label}"}, grounded in their actual planetary placements. Specific, real, and direct — not generic.{"" if focus_key == "general" else " Since this is a focused reading, go beyond surface-level: analyze the current planetary influences on this specific area in practical detail — what's actively helping, what's creating friction, realistic timing considerations, and what a thoughtful person in this position should actually understand about their situation right now."}[/TODAY]
 {"" if focus_key != "general" else '''[LOVE]2-3 sentences about relationships right now, based on current planetary influences. Specific and actionable.[/LOVE]
 [CAREER]2-3 sentences about work and purpose right now, based on current planetary influences.[/CAREER]
 [HEALTH]2-3 sentences about energy and physical wellbeing right now, based on current planetary influences.[/HEALTH]
