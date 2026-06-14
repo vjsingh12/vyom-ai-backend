@@ -408,58 +408,112 @@ LANGUAGE_NAMES = {
 
 LAL_KITAB_REMEDIES = {
     "Sun": [
-        "Offer water to the rising Sun each morning, facing east",
+        "Offer water to the rising Sun each morning, facing east, while taking a moment of gratitude",
         "Donate jaggery and wheat to those in need on Sundays",
         "Feed roti (flatbread) to cows on Sunday mornings",
-        "Spend a few minutes in sunlight each morning before starting your day"
+        "Spend a few minutes in early sunlight each morning before starting your day",
+        "Place a few drops of water mixed with a pinch of jaggery at the root of a tree on Sundays",
+        "Offer respect and a small gesture of service to your father or a fatherly figure",
+        "Avoid accepting things for free where you can, and try to earn your gains honestly this period",
+        "Keep a copper coin or small copper item with you, and donate one to a temple on a Sunday",
+        "Recite or quietly reflect on the Aditya Hridaya or simply offer thanks to the Sun for vitality",
+        "Add a small amount of saffron or turmeric to your routine, and share food with elders"
     ],
     "Moon": [
         "Keep a small steel or copper vessel of water by your bed at night, and water a plant with it the next morning",
         "Donate rice, milk, or white sweets on Mondays",
-        "Avoid difficult conversations with your mother or maternal figures on Mondays",
-        "Spend a few quiet minutes near water (a river, lake, or even a bath) on Monday evenings"
+        "Avoid difficult conversations with your mother or maternal figures on Mondays — instead offer them care",
+        "Spend a few quiet minutes near water (a river, lake, or even a bath) on Monday evenings",
+        "Drink water from a silver vessel, or keep a silver item with you",
+        "Offer milk or water to a peepal or banyan tree on Monday mornings",
+        "Keep your emotional commitments small and honest this period — do not over-promise",
+        "Donate a white cloth or rice to someone genuinely in need on a Monday",
+        "Spend gentle, unhurried time with your mother or a nurturing person in your life",
+        "Keep a small bowl of clean water in your bedroom and refresh it daily to settle the mind"
     ],
     "Mars": [
         "Donate red lentils (masoor dal) or jaggery on Tuesdays",
         "Offer something sweet to someone in need on Tuesdays, especially before any difficult conversation",
         "Avoid starting arguments or major confrontations on Tuesdays",
-        "Channel restless energy into physical activity early in the day"
+        "Channel restless energy into physical activity or exercise early in the day",
+        "Offer sweet water or sherbet to others, especially in warm weather",
+        "Donate or distribute sweets at a temple on a Tuesday",
+        "Keep a small piece of sweet jaggery with you and have a little before tense moments",
+        "Plant or care for a flowering plant with red blooms",
+        "Practice pausing and taking three slow breaths before reacting when provoked",
+        "Help someone who is physically struggling — carry a load, assist an elder — as quiet service"
     ],
     "Mercury": [
         "Donate green moong dal or fresh green vegetables on Wednesdays",
         "Keep your work or study desk clutter-free, especially on Wednesdays",
         "Feed green leafy fodder to a cow, or simply donate to a local goshala, on Wednesdays",
-        "Write down your thoughts before an important conversation on Wednesdays"
+        "Write down your thoughts before an important conversation on Wednesdays",
+        "Donate green bangles or green cloth to young girls or those in need",
+        "Keep a green plant on your desk and tend to it",
+        "Avoid signing important documents impulsively on Wednesdays — read twice",
+        "Offer water to a tulsi (holy basil) plant and keep it healthy",
+        "Speak carefully and truthfully this period — let your words be measured",
+        "Help a student or child with learning, or donate books or stationery"
     ],
     "Jupiter": [
         "Donate turmeric, chickpeas (chana dal), or yellow sweets on Thursdays",
         "Seek a few words of guidance from a teacher, mentor, or elder on Thursdays",
         "Water a tree (especially a peepal tree, if accessible) on Thursday mornings",
-        "Set aside a small amount for charity each Thursday, even if modest"
+        "Set aside a small amount for charity each Thursday, even if modest",
+        "Add a pinch of turmeric to your bath or apply a small tilak on Thursdays",
+        "Offer respect and service to a teacher, guru, or knowledgeable elder",
+        "Donate yellow items — gram dal, bananas, or yellow cloth — to a temple or those in need",
+        "Keep a small portion of your earnings dedicated to learning or to helping others learn",
+        "Feed bananas or jaggery to cows on a Thursday",
+        "Begin or continue a small habit of reading something wise and uplifting each day"
     ],
     "Venus": [
         "Donate white items — rice, sugar, or white clothing — on Fridays",
-        "Offer white flowers or light a candle at a place of worship on Fridays",
+        "Offer white flowers or light a lamp at a place of worship on Fridays",
         "Do something small and generous for the women in your family on Fridays",
-        "Spend time on something creative or beautifying your space on Fridays"
+        "Spend time on something creative or beautifying your space on Fridays",
+        "Keep your surroundings clean, fragrant, and pleasant, especially your bedroom",
+        "Donate perfume, fragrant items, or sweets to others on a Friday",
+        "Offer kheer (rice pudding) or white sweets and share them with loved ones",
+        "Express appreciation openly to your partner or those you love this period",
+        "Care for a fragrant or flowering plant such as jasmine or rose",
+        "Avoid harsh words in close relationships — choose softness and grace this period"
     ],
     "Saturn": [
         "Donate black sesame seeds, black lentils (urad dal), or iron items on Saturdays",
         "Feed crows or stray dogs on Saturday mornings",
         "Light a small mustard oil lamp on Saturday evenings",
-        "Be extra patient with delays today — resist the urge to force outcomes"
+        "Be extra patient with delays this period — resist the urge to force outcomes",
+        "Offer service to laborers, the elderly, or those doing hard, thankless work",
+        "Donate a pair of shoes, a blanket, or warm clothing to someone in need",
+        "Keep your commitments faithfully this period — Saturn rewards steady discipline",
+        "Light a sesame-oil lamp under a peepal tree on a Saturday evening",
+        "Help an elderly or disabled person with something practical, expecting nothing back",
+        "Maintain a simple, honest daily routine and avoid cutting corners"
     ],
     "Rahu": [
         "Donate mustard oil, black gram, or a coconut on Saturdays",
         "Give something to someone facing genuine hardship, without expecting anything in return",
-        "Avoid shortcuts, new contracts, or impulsive decisions today — wait a day before committing",
-        "Keep your living space tidy, especially under your bed and in storage areas"
+        "Avoid shortcuts, new contracts, or impulsive decisions this period — wait a day before committing",
+        "Keep your living space tidy, especially under your bed and in storage areas",
+        "Float a coconut or barley in flowing water as a gesture of release (where safe and permitted)",
+        "Donate a blanket or warm item to someone sleeping rough",
+        "Avoid gambling, speculation, and 'too good to be true' offers this period",
+        "Keep a clear head — limit intoxicants and late nights during this phase",
+        "Feed stray animals quietly without seeking recognition",
+        "Ground yourself daily — a short walk, bare feet on grass, or simple breathing"
     ],
     "Ketu": [
         "Donate sesame seeds or a blanket to someone in need",
         "Feed stray dogs, especially brown or black ones",
         "Spend 10 minutes in quiet reflection or meditation, with no phone nearby",
-        "Let go of one small grudge or unresolved thought today"
+        "Let go of one small grudge or unresolved thought this period",
+        "Keep a small dog-friendly gesture in your routine — water or food for strays",
+        "Donate a multi-colored or grey blanket to those in need",
+        "Spend a little time in solitude or prayer, away from noise and screens",
+        "Care for a pet or animal, or support an animal shelter",
+        "Release attachment to one outcome you have been clinging to",
+        "Keep a simple spiritual practice — a few minutes of stillness each day"
     ]
 }
 
@@ -956,9 +1010,10 @@ def generate_reading():
         planets_summary = data.get('planets_summary', '')
         antardasha = data.get('antardasha', '')
         dasha_lord = data.get('dashaLord', '')
+        active_doshas_raw = data.get('active_doshas', '') or ''
+        active_doshas_lower = active_doshas_raw.lower()
 
-        # Traditional significator planet for each focus area — used to widen
-        # the remedy candidate pool when the user asks about a specific area
+        # Traditional significator planet for each focus area
         FOCUS_SIGNIFICATORS = {
             'career': 'Saturn',
             'relationships': 'Venus',
@@ -966,45 +1021,82 @@ def generate_reading():
             'finances': 'Jupiter'
         }
 
-        # Deterministically pick the remedy planet + specific remedy option in
-        # Python (rather than asking the AI to "choose" from a list) — this
-        # guarantees the remedy actually varies by focus area, since the AI
-        # was found to converge on the same remedy regardless of which
-        # candidates were listed or how strongly the instructions emphasized
-        # the choice.
-        #
-        # - Focused readings: use that area's traditional significator planet
-        #   (Saturn/Venus/Mars/Jupiter for career/relationships/health/finances)
-        # - General readings: use the Mahadasha lord (falling back to
-        #   Antardasha lord, then Jupiter)
+        # Which doshas make a remedy genuinely relevant for each focus area.
+        # (Rule: a focused reading shows a remedy ONLY if one of these doshas
+        # is actually active in the chart — otherwise no remedy is shown.)
+        FOCUS_RELEVANT_DOSHAS = {
+            'relationships': ['mangal'],                      # Mars/marriage affliction
+            'career': ['sade sati', 'kaal sarp'],            # Saturn pressure / blocked momentum
+            'health': ['mangal', 'kaal sarp'],               # vitality/accident-prone afflictions
+            'finances': ['kaal sarp'],                       # blocked flow / obstacles
+        }
+
+        # ── Decide whether a remedy applies ──────────────────────────────────
+        # General reading: always include a remedy (tied to the dasha lord).
+        # Focused reading: include a remedy ONLY if a relevant dosha is active.
+        remedy_lord = None
+        chosen_remedy = None
+        remedy_applies = True
+
         if focus_key in FOCUS_SIGNIFICATORS:
-            remedy_lord = FOCUS_SIGNIFICATORS[focus_key]
-        elif dasha_lord in LAL_KITAB_REMEDIES:
-            remedy_lord = dasha_lord
-        elif antardasha in LAL_KITAB_REMEDIES:
-            remedy_lord = antardasha
+            relevant = FOCUS_RELEVANT_DOSHAS.get(focus_key, [])
+            dosha_present = any(d in active_doshas_lower for d in relevant)
+            if dosha_present:
+                remedy_lord = FOCUS_SIGNIFICATORS[focus_key]
+            else:
+                remedy_applies = False   # focused reading, no relevant dosha → no remedy
         else:
-            remedy_lord = "Jupiter"
+            # general reading
+            if dasha_lord in LAL_KITAB_REMEDIES:
+                remedy_lord = dasha_lord
+            elif antardasha in LAL_KITAB_REMEDIES:
+                remedy_lord = antardasha
+            else:
+                remedy_lord = "Jupiter"
 
-        remedy_options = LAL_KITAB_REMEDIES.get(remedy_lord, LAL_KITAB_REMEDIES["Jupiter"])
-        # Pick a specific option deterministically per-person (so different
-        # users don't all get the exact same wording for the same planet),
-        # using their birth details as a stable seed.
-        seed_str = f"{data.get('name','')}{data.get('dob','')}{remedy_lord}"
-        option_index = sum(ord(c) for c in seed_str) % len(remedy_options)
-        chosen_remedy = remedy_options[option_index]
+        if remedy_applies:
+            remedy_options = LAL_KITAB_REMEDIES.get(remedy_lord, LAL_KITAB_REMEDIES["Jupiter"])
+            # Deterministic per-person pick (stable but varied across people)
+            seed_str = f"{data.get('name','')}{data.get('dob','')}{remedy_lord}"
+            option_index = sum(ord(c) for c in seed_str) % len(remedy_options)
+            chosen_remedy = remedy_options[option_index]
 
-        remedy_instruction_text = (
-            f"The remedy has ALREADY been chosen for this person — it relates to {remedy_lord}. "
-            f"REMEDY_NAME must restate this remedy (you may lightly rephrase for natural flow, "
-            f"but keep the core action, object, and timing intact — do not change it to a "
-            f"different remedy or different planet):\n\"{chosen_remedy}\"\n"
-            f"REMEDY_WHY must explain in one sentence why a {remedy_lord} remedy is relevant "
-            f"to {focus_label} specifically, connected to this person's chart."
-        )
+            remedy_instruction_text = (
+                f"The remedy has ALREADY been chosen for this person — it relates to {remedy_lord}. "
+                f"REMEDY_NAME must restate this remedy (you may lightly rephrase for natural flow, "
+                f"but keep the core action, object, and timing intact — do not change it to a "
+                f"different remedy or different planet):\n\"{chosen_remedy}\"\n"
+                f"REMEDY_WHY must explain in one sentence why this remedy is relevant"
+                f"{' to ' + focus_label + ' specifically' if focus_key != 'general' else ''}, "
+                f"connected to this person's chart."
+            )
+        else:
+            # No remedy for this focused reading — instruct the AI to omit it.
+            remedy_instruction_text = (
+                "Do NOT include any remedy for this reading. Leave REMEDY_NAME, REMEDY_WHY, and "
+                "REMEDY_HOW completely empty. There is no chart affliction that calls for a remedy "
+                f"in the area of {focus_label} right now, and it would be dishonest to invent one."
+            )
 
         lang_code = data.get('lang', 'en')
         lang_name = LANGUAGE_NAMES.get(lang_code, 'English')
+
+        # Past→present→future arc — only for general and relationships readings.
+        if focus_key in ('general', 'relationships'):
+            time_arc_instruction = (
+                "TIME ARC (important for this reading): Weave a gentle past -> present -> future thread "
+                "into the TODAY field. Open with a brief, non-deterministic nod to the longer chapter they "
+                f"have been moving through (their current Mahadasha of {dasha_lord} and Antardasha of "
+                f"{antardasha}, which unfold over months and years) — use soft, suggestive language like "
+                "'over the past while you may have felt...', 'a sense of...', 'you may have been navigating...'. "
+                "Then center firmly on the present. Then close with a gentle forward hint covering up to roughly "
+                "the next three years, including a mention of the next major dasha/antardasha shift and what it "
+                "may begin to open up or ask of them — again using non-deterministic, suggestive wording "
+                "('may begin to', 'a sense that', 'the period ahead could invite') and never stating fixed "
+                "predictions or guarantees. Keep it warm, grounded, and humble."
+            )
+        else:
+            time_arc_instruction = ""
 
         # Native planet-name guidance per language so output reads as PURE
         # target-language text (not English planet names dropped into Hindi, etc.)
@@ -1054,6 +1146,8 @@ Their Vedic chart details:
 - PRIMARY FOCUS REQUESTED: {focus_label.upper()}{"" if focus_key == "general" else " (THIS IS NOT A GENERAL READING — see warning above)"}
 
 LANGUAGE: {language_instruction}
+
+{time_arc_instruction}
 
 CRITICAL INSTRUCTIONS:
 1. The "today" field MUST be primarily about {focus_label} — this is what {data.get('name', 'Seeker')} specifically asked about. Reference the relevant planet's house placement from the data above to ground this in their actual chart (in plain language, no jargon).
