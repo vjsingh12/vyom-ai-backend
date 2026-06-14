@@ -115,6 +115,22 @@ def init_db():
                 created_at TEXT NOT NULL
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS request_logs (
+                id SERIAL PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                kind TEXT,
+                email TEXT,
+                name TEXT,
+                dob TEXT,
+                tob TEXT,
+                pob TEXT,
+                focus TEXT,
+                question TEXT,
+                output TEXT,
+                lang TEXT
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -135,11 +151,73 @@ def init_db():
                 created_at TEXT NOT NULL
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS request_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                kind TEXT,
+                email TEXT,
+                name TEXT,
+                dob TEXT,
+                tob TEXT,
+                pob TEXT,
+                focus TEXT,
+                question TEXT,
+                output TEXT,
+                lang TEXT
+            )
+        """)
     db.commit()
     db.close()
 
 
 init_db()
+
+
+def log_request(kind, data=None, email=None, question=None, output=None):
+    """Best-effort logging of a reading/ask request for quality & training.
+    Never raises — logging failure must not break the user's request."""
+    try:
+        data = data or {}
+        db = get_db()
+        db.execute(
+            "INSERT INTO request_logs (created_at, kind, email, name, dob, tob, pob, focus, question, output, lang) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                datetime.utcnow().isoformat(),
+                kind,
+                email,
+                data.get('name'),
+                data.get('dob'),
+                data.get('tob'),
+                data.get('pob'),
+                data.get('focus'),
+                question,
+                output,
+                data.get('lang'),
+            )
+        )
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"[log_request] failed: {e}")
+
+
+@app.route('/cleanup', methods=['GET', 'POST'])
+def cleanup_logs():
+    """Delete request_logs older than 7 days. Pinged daily by cron-job.org.
+    Honours the 7-day retention promise in the Privacy Notice."""
+    try:
+        from datetime import timedelta
+        cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat()
+        db = get_db()
+        db.execute("DELETE FROM request_logs WHERE created_at < ?", (cutoff,))
+        db.commit()
+        db.close()
+        return jsonify({"status": "ok", "deleted_before": cutoff})
+    except Exception as e:
+        return jsonify({"status": "error", "detail": str(e)}), 500
+
 
 
 def generate_token(email):
@@ -1036,6 +1114,8 @@ Output ONLY the tagged sections above, nothing else — no preamble, no closing 
         if not reading["today"]:
             return jsonify({"error": f"Could not parse AI response. Raw output: {raw_text[:300]}"}), 500
 
+        log_request("reading", data=data, email=get_authenticated_email(),
+                    output=json.dumps(reading, ensure_ascii=False))
         return jsonify(reading)
 
     except urllib.error.HTTPError as e:
@@ -1108,6 +1188,8 @@ Respond with ONLY your answer as plain text — no JSON, no markdown formatting,
         answer = call_groq(prompt, api_key, temperature=0.85, max_tokens=700)
         answer = answer.strip()
 
+        log_request("ask", data=data, email=get_authenticated_email(),
+                    question=question, output=answer)
         return jsonify({"answer": answer})
 
     except urllib.error.HTTPError as e:
