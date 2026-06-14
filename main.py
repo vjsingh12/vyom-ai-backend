@@ -1005,18 +1005,35 @@ def generate_reading():
 
         lang_code = data.get('lang', 'en')
         lang_name = LANGUAGE_NAMES.get(lang_code, 'English')
+
+        # Native planet-name guidance per language so output reads as PURE
+        # target-language text (not English planet names dropped into Hindi, etc.)
+        PLANET_NATIVE = {
+            'hi': "Use the natural Hindi names for planets in Devanagari: Sun=सूर्य, Moon=चंद्र, Mars=मंगल, Mercury=बुध, Jupiter=गुरु/बृहस्पति, Venus=शुक्र, Saturn=शनि, Rahu=राहु, Ketu=केतु.",
+            'pa': "Use the natural Punjabi (Gurmukhi) names for planets: Sun=ਸੂਰਜ, Moon=ਚੰਦ, Mars=ਮੰਗਲ, Mercury=ਬੁੱਧ, Jupiter=ਗੁਰੂ/ਬ੍ਰਿਹਸਪਤੀ, Venus=ਸ਼ੁੱਕਰ, Saturn=ਸ਼ਨੀ, Rahu=ਰਾਹੂ, Ketu=ਕੇਤੂ.",
+            'ta': "Use the natural Tamil names for planets: Sun=சூரியன், Moon=சந்திரன், Mars=செவ்வாய், Mercury=புதன், Jupiter=குரு/வியாழன், Venus=சுக்கிரன், Saturn=சனி, Rahu=ராகு, Ketu=கேது.",
+            'te': "Use the natural Telugu names for planets: Sun=సూర్యుడు, Moon=చంద్రుడు, Mars=కుజుడు/అంగారకుడు, Mercury=బుధుడు, Jupiter=గురువు/బృహస్పతి, Venus=శుక్రుడు, Saturn=శని, Rahu=రాహువు, Ketu=కేతువు.",
+            'zh': "Use the natural Chinese names for planets: Sun=太阳, Moon=月亮, Mars=火星, Mercury=水星, Jupiter=木星, Venus=金星, Saturn=土星, Rahu=罗睺, Ketu=计都.",
+        }
+
         if lang_code == 'en':
-            language_instruction = "Respond entirely in English."
-        else:
             language_instruction = (
-                f"Respond ENTIRELY in {lang_name}, written naturally and fluently in {lang_name}'s "
-                f"native script (not transliterated/romanized). This includes every field below — "
+                "Respond entirely in English. Use the standard ENGLISH planet names only "
+                "(Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu, Ketu) — do NOT use "
+                "Sanskrit planet names like Surya, Chandra, Mangal, Shani, etc."
+            )
+        else:
+            native_planets = PLANET_NATIVE.get(lang_code, "")
+            language_instruction = (
+                f"Respond ENTIRELY and PURELY in {lang_name}, written naturally and fluently in {lang_name}'s "
+                f"native script (not transliterated/romanized). Every field below must be in {lang_name} — "
                 f"the planetary influences, today's insight, all life areas, the action, the remedy "
                 f"(translate the remedy instruction itself into {lang_name} too, keeping its core "
                 f"action and timing intact), and the dosha note. "
-                f"Keep planet names, 'Vayuman', and sign/dasha names (e.g. Mahadasha, Kanya) as-is "
-                f"if there is no natural {lang_name} equivalent, but write all surrounding sentences "
-                f"in {lang_name}."
+                f"{native_planets} "
+                f"Do NOT drop English planet names into the {lang_name} text — always use the native {lang_name} planet names given above. "
+                f"Keep only 'Vayuman' as-is. Write ALL sentences in pure {lang_name} with no English words mixed in "
+                f"(except 'Vayuman'). "
             )
 
         prompt = f"""You are Vayuman — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
@@ -1148,13 +1165,24 @@ def ask_vyom():
 
         lang_code = data.get('lang', 'en')
         lang_name = LANGUAGE_NAMES.get(lang_code, 'English')
+        ASK_PLANET_NATIVE = {
+            'hi': "Use natural Hindi planet names in Devanagari (सूर्य, चंद्र, मंगल, बुध, गुरु, शुक्र, शनि, राहु, केतु).",
+            'pa': "Use natural Punjabi (Gurmukhi) planet names (ਸੂਰਜ, ਚੰਦ, ਮੰਗਲ, ਬੁੱਧ, ਗੁਰੂ, ਸ਼ੁੱਕਰ, ਸ਼ਨੀ, ਰਾਹੂ, ਕੇਤੂ).",
+            'ta': "Use natural Tamil planet names (சூரியன், சந்திரன், செவ்வாய், புதன், குரு, சுக்கிரன், சனி, ராகு, கேது).",
+            'te': "Use natural Telugu planet names (సూర్యుడు, చంద్రుడు, కుజుడు, బుధుడు, గురువు, శుక్రుడు, శని, రాహువు, కేతువు).",
+            'zh': "Use natural Chinese planet names (太阳, 月亮, 火星, 水星, 木星, 金星, 土星, 罗睺, 计都).",
+        }
         if lang_code == 'en':
-            ask_language_instruction = "Respond entirely in English."
-        else:
             ask_language_instruction = (
-                f"Respond ENTIRELY in {lang_name}, written naturally and fluently in {lang_name}'s "
-                f"native script (not transliterated/romanized). Keep planet names and 'Vayuman' as-is "
-                f"if there is no natural {lang_name} equivalent, but write all sentences in {lang_name}."
+                "Respond entirely in English. Use standard ENGLISH planet names only "
+                "(Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu, Ketu) — never Sanskrit names like Surya, Shani, Mangal."
+            )
+        else:
+            ask_native = ASK_PLANET_NATIVE.get(lang_code, "")
+            ask_language_instruction = (
+                f"Respond ENTIRELY and PURELY in {lang_name}, in {lang_name}'s native script "
+                f"(not transliterated/romanized). {ask_native} Do NOT mix English planet names or other "
+                f"English words into the {lang_name} text. Keep only 'Vayuman' as-is. Write every sentence in pure {lang_name}."
             )
 
         prompt = f"""You are Vayuman — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, direct, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
