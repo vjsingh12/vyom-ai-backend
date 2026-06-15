@@ -145,6 +145,14 @@ def init_db():
                 lang TEXT
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS waitlist (
+                id SERIAL PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                email TEXT UNIQUE,
+                source TEXT
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -193,6 +201,14 @@ def init_db():
                 comment TEXT,
                 is_minor INTEGER,
                 lang TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS waitlist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                email TEXT UNIQUE,
+                source TEXT
             )
         """)
     db.commit()
@@ -289,6 +305,36 @@ def submit_feedback():
         return jsonify({"status": "ok"})
     except Exception as e:
         print(f"[feedback] failed: {e}")
+        return jsonify({"status": "error", "detail": str(e)}), 500
+
+
+@app.route('/waitlist', methods=['POST'])
+def join_waitlist():
+    """Save a waitlist email. Idempotent — re-submitting the same email is fine."""
+    try:
+        data = request.get_json(force=True) or {}
+        email = (data.get('email') or '').strip().lower()
+        # Basic email sanity check
+        if not email or '@' not in email or '.' not in email.split('@')[-1]:
+            return jsonify({"error": "Invalid email"}), 400
+
+        db = get_db()
+        if USE_POSTGRES:
+            db.execute(
+                "INSERT INTO waitlist (created_at, email, source) VALUES (?, ?, ?) "
+                "ON CONFLICT (email) DO NOTHING",
+                (datetime.utcnow().isoformat(), email, data.get('source') or 'demo')
+            )
+        else:
+            db.execute(
+                "INSERT OR IGNORE INTO waitlist (created_at, email, source) VALUES (?, ?, ?)",
+                (datetime.utcnow().isoformat(), email, data.get('source') or 'demo')
+            )
+        db.commit()
+        db.close()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        print(f"[waitlist] failed: {e}")
         return jsonify({"status": "error", "detail": str(e)}), 500
 
 
