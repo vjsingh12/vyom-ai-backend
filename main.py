@@ -999,13 +999,16 @@ def generate_reading():
 
         focus_labels = {
             'general': 'overall life',
-            'career': 'career and purpose',
+            'career': 'career',
             'relationships': 'love and relationships',
             'health': 'health and wellbeing',
-            'finances': 'finances and abundance'
+            'finances': 'finances and abundance',
+            'studies': 'studies and personal growth'
         }
-        focus_label = focus_labels.get(data.get('focus', 'general'), 'overall life')
-        focus_key = data.get('focus', 'general')
+        is_minor = bool(data.get('is_minor', False))
+        # A minor's chart is always a study-focused reading
+        focus_key = 'studies' if is_minor else data.get('focus', 'general')
+        focus_label = focus_labels.get(focus_key, 'overall life')
 
         planets_summary = data.get('planets_summary', '')
         antardasha = data.get('antardasha', '')
@@ -1043,7 +1046,10 @@ def generate_reading():
         chosen_remedy = None
         remedy_applies = True
 
-        if focus_key in FOCUS_SIGNIFICATORS:
+        if is_minor:
+            # Never show remedies for a minor's chart.
+            remedy_applies = False
+        elif focus_key in FOCUS_SIGNIFICATORS:
             relevant = FOCUS_RELEVANT_DOSHAS.get(focus_key, [])
             dosha_present = any(d in active_doshas_lower for d in relevant)
             if dosha_present:
@@ -1086,8 +1092,9 @@ def generate_reading():
         lang_code = data.get('lang', 'en')
         lang_name = LANGUAGE_NAMES.get(lang_code, 'English')
 
-        # Past→present→future arc — only for general and relationships readings.
-        if focus_key in ('general', 'relationships'):
+        # Past→present→future arc — only for general and relationships readings
+        # (never for a minor's study reading).
+        if not is_minor and focus_key in ('general', 'relationships'):
             time_arc_instruction = (
                 "TIME ARC (important for this reading): Weave a gentle past -> present -> future thread "
                 "into the TODAY field. Open with a brief, non-deterministic nod to the longer chapter they "
@@ -1102,6 +1109,32 @@ def generate_reading():
             )
         else:
             time_arc_instruction = ""
+
+        # ── Minor-chart safety mode ──────────────────────────────────────────
+        # The app user is an adult, but this chart belongs to a minor (under 18),
+        # e.g. a parent/guardian consulting about their child. The reading must
+        # be written ABOUT the child, addressed to the caring adult reading it.
+        if is_minor:
+            minor_instruction = (
+                f"\n\nIMPORTANT — THIS CHART BELONGS TO A MINOR (a child under 18). "
+                f"The reader is the child's parent or guardian, NOT the child. Follow ALL of these rules:\n"
+                f"- Write entirely in the THIRD PERSON about the child (use their first name '{first_name}' and "
+                f"'they/them' — e.g. '{first_name} is moving through a curious, energetic phase'). NEVER address "
+                f"the child directly.\n"
+                f"- Speak TO the parent/guardian — offer warm, supportive observations about the child's nature, "
+                f"temperament, strengths, and how the adult can best understand, encourage, and nurture them.\n"
+                f"- Keep the entire reading focused on STUDIES, learning, character, confidence, friendships at school, "
+                f"talents, and healthy growth. Do NOT discuss career, finances, marriage, or adult themes.\n"
+                f"- ABSOLUTELY NO romantic, relationship, or any adult content of any kind. This is non-negotiable.\n"
+                f"- Explicitly encourage the involvement, patience, and guidance of the child's parents or guardians "
+                f"at least once in the reading.\n"
+                f"- Do NOT prescribe any remedy, ritual, fast, gemstone, or remedial action. Leave all remedy fields empty.\n"
+                f"- Keep the tone gentle, hopeful, age-appropriate, and reassuring. Avoid anything frightening, fatalistic, "
+                f"or that could worry a parent unnecessarily.\n"
+                f"- The [TODAY] field must open by naming the child ('{first_name} ...') in third person, not by addressing them.\n"
+            )
+        else:
+            minor_instruction = ""
 
         # Native planet-name guidance per language so output reads as PURE
         # target-language text (not English planet names dropped into Hindi, etc.)
@@ -1151,6 +1184,7 @@ Their Vedic chart details:
 - PRIMARY FOCUS REQUESTED: {focus_label.upper()}{"" if focus_key == "general" else " (THIS IS NOT A GENERAL READING — see warning above)"}
 
 LANGUAGE: {language_instruction}
+{minor_instruction}
 
 {time_arc_instruction}
 
@@ -1291,8 +1325,22 @@ def ask_vyom():
                 f"English words into the {lang_name} text. Keep only 'Vayuman' as-is. Write every sentence in pure {lang_name}."
             )
 
-        prompt = f"""You are Vayuman — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, direct, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
+        ask_is_minor = bool(data.get('is_minor', False))
+        ask_minor_instruction = ""
+        if ask_is_minor:
+            ask_minor_instruction = (
+                "\n\nIMPORTANT — THIS CHART BELONGS TO A MINOR (under 18). The person asking is the child's "
+                "parent or guardian. Answer in the THIRD PERSON about the child, addressed to the parent/guardian. "
+                "Keep your answer focused on the child's studies, character, wellbeing, friendships, talents, and "
+                "healthy growth, and encourage parental guidance and involvement. Do NOT give any remedy, ritual, "
+                "gemstone, or remedial prescription. ABSOLUTELY NO romantic, relationship, marriage, or adult content "
+                "of any kind. If the question touches adult themes (marriage, career, finances, romance) for the child, "
+                "gently redirect to age-appropriate guidance about their growth and learning, and suggest the parent "
+                "revisit such topics when the child is older. Keep the tone gentle, hopeful, and reassuring.\n"
+            )
 
+        prompt = f"""You are Vayuman — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, direct, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
+{ask_minor_instruction}
 {data.get('name', 'Seeker')} has come to you with a real question about their life. Use their actual Vedic chart to answer it honestly and specifically — this is a real-time consultation, not a generic horoscope.
 
 Their Vedic chart details:
