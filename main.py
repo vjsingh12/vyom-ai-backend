@@ -1073,6 +1073,11 @@ def calculate_chart():
         return jsonify({"error": str(e)}), 500
 
 
+class RateLimitError(Exception):
+    """Raised when the AI provider returns a 429 (rate/quota limit)."""
+    pass
+
+
 def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
     """Call Groq's chat completion API and return the raw text response."""
     payload = json.dumps({
@@ -1093,8 +1098,15 @@ def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
         method="POST"
     )
 
-    with urllib.request.urlopen(req, timeout=45) as resp:
-        result = json.loads(resp.read().decode('utf-8'))
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        # Surface rate limits as a clean, user-friendly signal
+        if e.code == 429:
+            raise RateLimitError("Vayuman is experiencing very high demand right now. "
+                                 "Please try again in a few minutes.")
+        raise
 
     return result["choices"][0]["message"]["content"]
 
@@ -1405,8 +1417,12 @@ Output ONLY the tagged sections above, nothing else — no preamble, no closing 
                     output=json.dumps(reading, ensure_ascii=False))
         return jsonify(reading)
 
+    except RateLimitError as e:
+        return jsonify({"error": str(e), "rate_limited": True}), 429
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
+        if e.code == 429:
+            return jsonify({"error": "Vayuman is experiencing very high demand right now. Please try again in a few minutes.", "rate_limited": True}), 429
         return jsonify({"error": f"Groq API error ({e.code}): {error_body}"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1506,8 +1522,12 @@ Respond with ONLY your answer as plain text — no JSON, no markdown formatting,
                     question=question, output=answer)
         return jsonify({"answer": answer})
 
+    except RateLimitError as e:
+        return jsonify({"error": str(e), "rate_limited": True}), 429
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
+        if e.code == 429:
+            return jsonify({"error": "Vayuman is experiencing very high demand right now. Please try again in a few minutes.", "rate_limited": True}), 429
         return jsonify({"error": f"Groq API error ({e.code}): {error_body}"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
