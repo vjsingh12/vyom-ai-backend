@@ -131,6 +131,20 @@ def init_db():
                 lang TEXT
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS feedback (
+                id SERIAL PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                email TEXT,
+                name TEXT,
+                dob TEXT,
+                focus TEXT,
+                rating INTEGER,
+                comment TEXT,
+                is_minor INTEGER,
+                lang TEXT
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -164,6 +178,20 @@ def init_db():
                 focus TEXT,
                 question TEXT,
                 output TEXT,
+                lang TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                email TEXT,
+                name TEXT,
+                dob TEXT,
+                focus TEXT,
+                rating INTEGER,
+                comment TEXT,
+                is_minor INTEGER,
                 lang TEXT
             )
         """)
@@ -218,6 +246,50 @@ def cleanup_logs():
     except Exception as e:
         return jsonify({"status": "error", "detail": str(e)}), 500
 
+
+
+@app.route('/feedback', methods=['POST'])
+def submit_feedback():
+    """Store a user's star rating + optional comment for a reading.
+    Captures who gave it (email if signed in, else name/dob from the chart)."""
+    try:
+        data = request.get_json(force=True) or {}
+        rating = data.get('rating')
+        try:
+            rating = int(rating)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid rating"}), 400
+        if rating < 1 or rating > 5:
+            return jsonify({"error": "Rating must be 1-5"}), 400
+
+        # Resolve email from Bearer token if signed in
+        email = None
+        auth = request.headers.get('Authorization', '')
+        if auth.startswith('Bearer '):
+            email = verify_token(auth[7:])
+
+        db = get_db()
+        db.execute(
+            "INSERT INTO feedback (created_at, email, name, dob, focus, rating, comment, is_minor, lang) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                datetime.utcnow().isoformat(),
+                email,
+                data.get('name'),
+                data.get('dob'),
+                data.get('focus'),
+                rating,
+                (data.get('comment') or '')[:2000],
+                1 if data.get('is_minor') else 0,
+                data.get('lang'),
+            )
+        )
+        db.commit()
+        db.close()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        print(f"[feedback] failed: {e}")
+        return jsonify({"status": "error", "detail": str(e)}), 500
 
 
 def generate_token(email):
