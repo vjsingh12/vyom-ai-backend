@@ -1356,16 +1356,21 @@ def generate_reading():
         # (never for a minor's study reading).
         if not is_minor and focus_key in ('general', 'relationships'):
             time_arc_instruction = (
-                "TIME ARC (important for this reading): Weave a gentle past -> present -> future thread "
-                "into the TODAY field. Open with a brief, non-deterministic nod to the longer chapter they "
+                "TIME ARC (important for this reading): Weave a vivid past -> present -> future thread "
+                "into the TODAY field. Open with a brief, recognisable nod to the longer chapter they "
                 f"have been moving through (their current Mahadasha of {dasha_lord} and Antardasha of "
-                f"{antardasha}, which unfold over months and years) — use soft, suggestive language like "
-                "'over the past while you may have felt...', 'a sense of...', 'you may have been navigating...'. "
-                "Then center firmly on the present. Then close with a gentle forward hint covering up to roughly "
-                "the next three years, including a mention of the next major dasha/antardasha shift and what it "
-                "may begin to open up or ask of them — again using non-deterministic, suggestive wording "
-                "('may begin to', 'a sense that', 'the period ahead could invite') and never stating fixed "
-                "predictions or guarantees. Keep it warm, grounded, and humble."
+                f"{antardasha}, which unfold over months and years). Then center firmly on the present. "
+                "Then give a CONFIDENT, SPECIFIC forward outlook covering roughly the next three years: "
+                "name the next major dasha/antardasha shift and, where relevant, give a concrete timing "
+                "WINDOW with approximate years or seasons (e.g. 'the window opening in late 2026 looks "
+                "especially favourable for...', 'the period around 2027 is a strong one for...'). "
+                "Speak with warm confidence ('this is a strong window', 'the period ahead is especially "
+                "favourable for...') rather than hedging every line with 'maybe'. IMPORTANT: still never "
+                "state a fabricated hard guarantee or a single fixed date as certain fact (do not say 'you "
+                "WILL marry in 2027'); frame timing as a strong, favourable window or likely period. The "
+                "reading should feel specific, personal, and confident — not a string of vague maybes — "
+                "while remaining an honest favourable-window forecast rather than a guarantee. "
+                "Keep it warm and grounded."
             )
         else:
             time_arc_instruction = ""
@@ -1476,6 +1481,7 @@ ACCURACY IS THE TOP PRIORITY. This reading must be so specific to {first_name}'s
 6. {remedy_instruction_text}
 7. If any doshas are listed as active above, briefly acknowledge EACH ONE in the DOSHA_NOTE field (not just one) — calm, factual, never alarming, one short sentence per dosha. If "None notable" or empty, write DOSHA_NOTE as a short reassuring note that no major doshas are currently active.
 {"" if focus_key == "general" else f'''8. FINAL CHECK before writing [TODAY]: re-read it after drafting — if it could apply to someone who asked about a DIFFERENT focus area (or no focus at all), or to a person with DIFFERENT placements, rewrite it. It must be unmistakably about {focus_label} AND unmistakably about {first_name}'s specific chart.'''}
+9. CONFIDENCE & TIMING: Write with warm confidence, not constant hedging. When timing is relevant, give concrete, satisfying timing WINDOWS grounded in the dasha/antardasha periods and transits — name approximate years or seasons (e.g. "the window opening in late 2026 is especially favourable", "the period around 2027 looks strong for this"). People value a little specificity. Do NOT bury the reading in "maybe / perhaps / it's possible" on every line. BUT never fabricate a hard guarantee or a single fixed date stated as certain fact (not "you WILL marry in 2027"); frame timing as a strong, favourable window or likely period. Specific and confident, yet still an honest favourable-window forecast — never a guarantee.
 
 Write your reading using EXACTLY this format — plain text with delimiter tags, no JSON, no markdown, no backticks. Write naturally, including apostrophes and quotes as needed within the text:
 
@@ -1635,11 +1641,13 @@ LANGUAGE: {ask_language_instruction}
 
 INSTRUCTIONS:
 1. First, check whether the question is a genuine, coherent question (even if vague, casual, or oddly phrased). If it's gibberish, random characters, a string of unrelated words, or otherwise doesn't form a real question — gently and warmly ask them to rephrase or share what's actually on their mind. Do NOT invent an astrological answer to nonsense. Keep this redirect short (1-3 sentences) and kind, e.g. "I want to make sure I understand you properly — could you share a bit more about what's on your mind?"
-2. If it IS a genuine question, answer it directly — don't deflect into generic advice. If they ask about a specific situation (e.g. "should I take this job", "will my relationship work out", "is this a good time to invest"), engage with that specific situation using their chart data.
-3. Ground your answer in their actual planetary placements — reference the relevant life area (career, relationships, finances, etc.) and which planet is influencing it, in plain language (no "8th house" type jargon).
-4. Be honest and specific — including about likely challenges or timing concerns, not just reassurance. A wise guide tells the truth kindly, not just what someone wants to hear.
-5. Length: 4-7 sentences for genuine questions. Warm but substantive — this should feel like real guidance, not a fortune cookie.
-6. End with one grounded, practical next step they can take (only for genuine questions).
+2. META-QUESTIONS: If the question is about the service itself rather than the person's life — e.g. about Vayuman's terms and conditions, privacy, pricing, how Vayuman works, what technology or AI it uses, whether astrology/the readings are "real", "true", "accurate", or scientifically valid, or any similar question about the nature of the service — do NOT answer it directly and do NOT comment on whether the readings are true. Instead, warmly and gracefully turn back toward the person and their chart. Stay fully in character as a gentle astrological guide. For example: "That's a thoughtful thing to wonder about — but what I'm here for is you, and what the stars are quietly saying about your path. Is there something on your mind I can look into for you?" Never break character, never disparage astrology, never discuss the app's mechanics, and never confirm or deny the truth of the readings.
+3. If it IS a genuine question about their life, answer it directly — don't deflect into generic advice. If they ask about a specific situation (e.g. "should I take this job", "will my relationship work out", "is this a good time to invest"), engage with that specific situation using their chart data.
+4. Ground your answer in their actual planetary placements — reference the relevant life area (career, relationships, finances, etc.) and which planet is influencing it, in plain language (no "8th house" type jargon).
+5. SPECIFICITY & TIMING: Be confident and specific rather than vague. When timing is relevant (e.g. "when will I marry", "when will my career improve"), give a concrete, satisfying timing WINDOW grounded in their dasha/antardasha periods and major transits — name approximate years or seasons (e.g. "the window opening in late 2026 through 2028 looks especially favourable", "the period around 2027"). Speak with warm confidence ("this looks like a strong window", "the period ahead is especially favourable for...") rather than hedging on everything. BUT never state a fabricated hard guarantee or single fixed date as certain fact (not "you WILL marry in 2027"); frame it as a strong, favourable window or likely period. The goal is a reading that feels specific, confident, and personal — not a string of "maybes" — while remaining an honest favourable-window forecast, not a guarantee.
+6. Be honest and specific — including about likely challenges or timing concerns, not just reassurance. A wise guide tells the truth kindly, not just what someone wants to hear.
+7. Length: 4-7 sentences for genuine questions. Warm but substantive — this should feel like real guidance, not a fortune cookie.
+8. End with one grounded, practical next step they can take (only for genuine questions).
 
 Respond with ONLY your answer as plain text — no JSON, no markdown formatting, no headers."""
 
