@@ -1741,6 +1741,68 @@ Write the reading now."""
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/numerology-ask', methods=['POST'])
+def numerology_ask():
+    """Answer a user's question based on their numerology profile."""
+    try:
+        data = request.get_json() or {}
+        question = (data.get('question') or '').strip()
+        full_name = (data.get('name') or '').strip()
+        dob = (data.get('dob') or '').strip()
+        if not question:
+            return jsonify({"error": "No question provided"}), 400
+        if not full_name or not dob:
+            return jsonify({"error": "Missing name or date of birth"}), 400
+        if not (os.environ.get('GEMINI_API_KEY') or os.environ.get('GROQ_API_KEY')):
+            return jsonify({"error": "Server not configured: missing AI provider key"}), 500
+
+        try:
+            profile = numerology_engine.full_numerology_profile(full_name, dob)
+        except Exception as e:
+            return jsonify({"error": f"Could not read those details: {e}"}), 400
+
+        first_name = full_name.split()[0]
+        first_name = first_name[:1].upper() + first_name[1:] if first_name else "Seeker"
+
+        nums = (f"Life Path {profile['life_path']['number']}, "
+                f"Expression {profile['expression']['number']}, "
+                f"Soul Urge {profile['soul_urge']['number']}, "
+                f"Personality {profile['personality']['number']}, "
+                f"Birthday {profile['birthday']['number']}, "
+                f"Maturity {profile['maturity']['number']}, "
+                f"Personal Year {profile['personal_year']['number']}")
+
+        prompt = f"""You are Vayuman, a warm, wise numerology guide. {first_name} has asked you a question. Answer it using ONLY their numerology numbers below (computed with the standard Pythagorean system).
+
+{first_name}'s numbers: {nums}.
+
+Their question: "{question}"
+
+INSTRUCTIONS:
+1. First check the question is genuine and coherent. If it's gibberish or not a real question, warmly ask them to rephrase (1-2 sentences). 
+2. META-QUESTIONS: If they ask about the service itself (terms, privacy, pricing, how Vayuman works, what technology/AI it uses, or whether numerology/the readings are "real"/"true"/"accurate"/scientific), do NOT answer directly and do NOT confirm or deny whether it's true. Warmly redirect to them and their numbers, staying in character.
+3. For a genuine life question, answer directly and personally, grounding the answer in the relevant numbers (e.g. their Life Path, or their Personal Year for timing questions). Reference the numbers by name where natural.
+4. Be confident and specific. For timing, you may give an encouraging window or the theme of their Personal Year — but frame it as guidance and likely themes, NEVER a fixed guarantee or fated certainty.
+5. Do NOT mention astrology, planets, or birth charts — this is purely numerology.
+6. 4-6 warm sentences. Plain text only — no markdown, no headings.
+
+Answer now."""
+
+        answer = call_ai(prompt, temperature=0.85, max_tokens=700)
+        log_request("numerology_ask", data=data, email=get_authenticated_email(),
+                    question=question, output=answer)
+        return jsonify({"answer": answer.strip()})
+
+    except RateLimitError as e:
+        return jsonify({"error": str(e), "rate_limited": True}), 429
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            return jsonify({"error": "Vayuman is experiencing very high demand right now. Please try again in a few minutes.", "rate_limited": True}), 429
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "Vayuman engine is running", "engine": "Swiss Ephemeris + Lahiri Ayanamsa"})
