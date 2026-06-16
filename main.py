@@ -14,6 +14,7 @@ import json
 import re
 import sqlite3
 import urllib.request
+import numerology as numerology_engine
 import urllib.parse
 import urllib.error
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -1665,6 +1666,77 @@ Respond with ONLY your answer as plain text — no JSON, no markdown formatting,
         if e.code == 429:
             return jsonify({"error": "Vayuman is experiencing very high demand right now. Please try again in a few minutes.", "rate_limited": True}), 429
         return jsonify({"error": f"Groq API error ({e.code}): {error_body}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/numerology', methods=['POST'])
+def get_numerology():
+    """Numerology reading. Needs only full name + DOB (no time/place).
+    Computes the Pythagorean profile, then has the AI write a warm
+    interpretation in Vayuman's voice."""
+    try:
+        data = request.get_json() or {}
+        full_name = (data.get('name') or '').strip()
+        dob = (data.get('dob') or '').strip()
+        if not full_name:
+            return jsonify({"error": "Please enter your full name for a numerology reading."}), 400
+        if not dob:
+            return jsonify({"error": "Please enter your date of birth."}), 400
+
+        # Compute the numerology profile
+        try:
+            profile = numerology_engine.full_numerology_profile(full_name, dob)
+        except Exception as e:
+            return jsonify({"error": f"Could not read those details: {e}"}), 400
+
+        if not (os.environ.get('GEMINI_API_KEY') or os.environ.get('GROQ_API_KEY')):
+            return jsonify({"error": "Server not configured: missing AI provider key"}), 500
+
+        first_name = full_name.split()[0]
+        first_name = first_name[:1].upper() + first_name[1:] if first_name else "Seeker"
+
+        lp = profile['life_path']; expr = profile['expression']; soul = profile['soul_urge']
+        pers = profile['personality']; bday = profile['birthday']; mat = profile['maturity']
+        py = profile['personal_year']; lucky = profile['lucky']
+
+        prompt = f"""You are Vayuman, a warm, wise numerology guide. Write a personal numerology reading for {first_name}, speaking directly to them by their first name. Base it ONLY on the calculated numbers below (these are computed precisely using the standard Pythagorean system — do not recalculate or change them).
+
+{first_name}'s numbers:
+- Life Path {lp['number']} ({lp['meaning']}) — their core purpose and life journey.
+- Expression/Destiny {expr['number']} ({expr['meaning']}) — natural talents and what they project.
+- Soul Urge {soul['number']} ({soul['meaning']}) — inner desires and motivation.
+- Personality {pers['number']} ({pers['meaning']}) — how others perceive them.
+- Birthday {bday['number']} ({bday['meaning']}) — a special gift they carry.
+- Maturity {mat['number']} ({mat['meaning']}) — what they grow into later in life.
+- Personal Year (this year) {py['number']} ({py['meaning']}) — the theme of their year ahead.
+
+INSTRUCTIONS:
+1. Open by addressing {first_name} by name in the first sentence.
+2. Write 4-6 warm, flowing sentences that weave these numbers into a coherent portrait — show how they relate to each other (where they reinforce, where they add contrast/texture), not a dry list.
+3. Be specific and confident in tone. For the Personal Year, give a confident, encouraging outlook for the year ahead — you may reference a favourable window/season — but frame it as guidance and likely themes, NEVER as a fixed guarantee or fated certainty.
+4. Keep it humane and grounded — practical wisdom, not vague mysticism.
+5. Do NOT mention astrology, planets, or charts — this is a pure numerology reading.
+6. Plain text only — no markdown, no headings, no bullet points.
+
+Write the reading now."""
+
+        interpretation = call_ai(prompt, temperature=0.8, max_tokens=900)
+
+        log_request("numerology", data=data, email=get_authenticated_email(),
+                    output=interpretation)
+
+        return jsonify({
+            "interpretation": interpretation.strip(),
+            "profile": profile,
+        })
+
+    except RateLimitError as e:
+        return jsonify({"error": str(e), "rate_limited": True}), 429
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            return jsonify({"error": "Vayuman is experiencing very high demand right now. Please try again in a few minutes.", "rate_limited": True}), 429
+        return jsonify({"error": str(e)}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
