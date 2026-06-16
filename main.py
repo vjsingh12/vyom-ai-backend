@@ -1722,12 +1722,26 @@ INSTRUCTIONS:
 Write the reading now."""
 
         interpretation = call_ai(prompt, temperature=0.8, max_tokens=900)
+        interpretation = (interpretation or "").strip()
+
+        # Safety net: if the AI returns an empty response (e.g. blocked/empty
+        # candidate), build a meaningful interpretation from the numbers so the
+        # user never sees a blank reading.
+        if not interpretation:
+            interpretation = (
+                f"{first_name}, your numbers tell a clear story. Your Life Path "
+                f"{lp['number']} speaks of {lp['meaning'].rstrip('.').lower()} — the heart of your journey. "
+                f"Your Expression {expr['number']} ({expr['meaning'].rstrip('.').lower()}) shows in how you meet the world, "
+                f"while your Soul Urge {soul['number']} reveals an inner pull toward {soul['meaning'].rstrip('.').lower()}. "
+                f"This year carries the energy of a Personal Year {py['number']}: {py['meaning'].rstrip('.').lower()}. "
+                f"Lean into that theme — it's the current you're meant to move with right now."
+            )
 
         log_request("numerology", data=data, email=get_authenticated_email(),
                     output=interpretation)
 
         return jsonify({
-            "interpretation": interpretation.strip(),
+            "interpretation": interpretation,
             "profile": profile,
         })
 
