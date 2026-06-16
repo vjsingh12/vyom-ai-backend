@@ -153,6 +153,17 @@ def init_db():
                 source TEXT
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS contact_messages (
+                id SERIAL PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                kind TEXT,
+                name TEXT,
+                email TEXT,
+                message TEXT,
+                rating INTEGER
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -209,6 +220,17 @@ def init_db():
                 created_at TEXT NOT NULL,
                 email TEXT UNIQUE,
                 source TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS contact_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                kind TEXT,
+                name TEXT,
+                email TEXT,
+                message TEXT,
+                rating INTEGER
             )
         """)
     db.commit()
@@ -335,6 +357,43 @@ def join_waitlist():
         return jsonify({"status": "ok"})
     except Exception as e:
         print(f"[waitlist] failed: {e}")
+        return jsonify({"status": "error", "detail": str(e)}), 500
+
+
+@app.route('/contact', methods=['POST'])
+def contact_message():
+    """Save a contact-us message or general feedback. kind = 'contact' or 'feedback'."""
+    try:
+        data = request.get_json(force=True) or {}
+        kind = (data.get('kind') or 'contact').strip().lower()
+        if kind not in ('contact', 'feedback'):
+            kind = 'contact'
+        name = (data.get('name') or '').strip()[:200]
+        email = (data.get('email') or '').strip()[:200]
+        message = (data.get('message') or '').strip()[:5000]
+        rating = data.get('rating')
+        try:
+            rating = int(rating) if rating not in (None, '') else None
+        except (TypeError, ValueError):
+            rating = None
+
+        # Require at least a message (and an email for contact replies)
+        if not message:
+            return jsonify({"error": "Message is required"}), 400
+        if kind == 'contact' and (not email or '@' not in email):
+            return jsonify({"error": "A valid email is required"}), 400
+
+        db = get_db()
+        db.execute(
+            "INSERT INTO contact_messages (created_at, kind, name, email, message, rating) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (datetime.utcnow().isoformat(), kind, name, email, message, rating)
+        )
+        db.commit()
+        db.close()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        print(f"[contact] failed: {e}")
         return jsonify({"status": "error", "detail": str(e)}), 500
 
 
