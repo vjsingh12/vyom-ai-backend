@@ -1137,6 +1137,47 @@ class RateLimitError(Exception):
     pass
 
 
+# Which model provider to use: 'gemini' (default) or 'groq'.
+AI_PROVIDER = os.environ.get('AI_PROVIDER', 'gemini').lower()
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
+
+
+def call_gemini(prompt, api_key, temperature=0.9, max_tokens=2600):
+    """Call Google's Gemini API and return the raw text response."""
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{GEMINI_MODEL}:generateContent?key={api_key}")
+    payload = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens
+        }
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            raise RateLimitError("Vayuman is experiencing very high demand right now. "
+                                 "Please try again in a few minutes.")
+        raise
+
+    # Extract text from Gemini's response structure
+    try:
+        parts = result["candidates"][0]["content"]["parts"]
+        return "".join(p.get("text", "") for p in parts)
+    except (KeyError, IndexError):
+        # If blocked or empty, surface a clean error
+        raise RuntimeError("The AI returned an empty response. Please try again.")
+
+
 def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
     """Call Groq's chat completion API and return the raw text response."""
     payload = json.dumps({
@@ -1170,6 +1211,38 @@ def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
     return result["choices"][0]["message"]["content"]
 
 
+def call_ai(prompt, temperature=0.9, max_tokens=2600):
+    """Unified AI call. Uses the configured provider (Gemini by default), and
+    automatically falls back to the other provider on failure/rate-limit if
+    that provider's key is available."""
+    gemini_key = os.environ.get('GEMINI_API_KEY')
+    groq_key = os.environ.get('GROQ_API_KEY')
+
+    primary = AI_PROVIDER
+    # Build ordered provider list (primary first, the other as fallback)
+    order = ['gemini', 'groq'] if primary == 'gemini' else ['groq', 'gemini']
+
+    last_err = None
+    for prov in order:
+        try:
+            if prov == 'gemini' and gemini_key:
+                return call_gemini(prompt, gemini_key, temperature, max_tokens)
+            if prov == 'groq' and groq_key:
+                return call_groq(prompt, groq_key, temperature, max_tokens)
+        except RateLimitError as e:
+            last_err = e
+            continue  # try the fallback provider
+        except Exception as e:
+            last_err = e
+            continue
+    # If we got here, everything failed
+    if isinstance(last_err, RateLimitError):
+        raise last_err
+    if last_err:
+        raise last_err
+    raise RuntimeError("No AI provider is configured. Set GEMINI_API_KEY or GROQ_API_KEY.")
+
+
 @app.route('/reading', methods=['POST'])
 def generate_reading():
     """
@@ -1181,10 +1254,8 @@ def generate_reading():
     """
     try:
         data = request.get_json()
-        api_key = os.environ.get('GROQ_API_KEY')
-
-        if not api_key:
-            return jsonify({"error": "Server not configured: missing GROQ_API_KEY"}), 500
+        if not (os.environ.get('GEMINI_API_KEY') or os.environ.get('GROQ_API_KEY')):
+            return jsonify({"error": "Server not configured: missing AI provider key"}), 500
 
         focus_labels = {
             'general': 'overall life',
@@ -1437,7 +1508,7 @@ Tone rules:
 
 Output ONLY the tagged sections above, nothing else — no preamble, no closing remarks."""
 
-        raw_text = call_groq(prompt, api_key, temperature=0.7, max_tokens=3200)
+        raw_text = call_ai(prompt, temperature=0.7, max_tokens=3200)
 
         def extract(tag, text):
             m = re.search(rf'\[{tag}\](.*?)\[/{tag}\]', text, re.DOTALL)
@@ -1499,10 +1570,8 @@ def ask_vyom():
     """
     try:
         data = request.get_json()
-        api_key = os.environ.get('GROQ_API_KEY')
-
-        if not api_key:
-            return jsonify({"error": "Server not configured: missing GROQ_API_KEY"}), 500
+        if not (os.environ.get('GEMINI_API_KEY') or os.environ.get('GROQ_API_KEY')):
+            return jsonify({"error": "Server not configured: missing AI provider key"}), 500
 
         question = (data.get('question') or '').strip()
         if not question:
@@ -1574,7 +1643,7 @@ INSTRUCTIONS:
 
 Respond with ONLY your answer as plain text — no JSON, no markdown formatting, no headers."""
 
-        answer = call_groq(prompt, api_key, temperature=0.85, max_tokens=700)
+        answer = call_ai(prompt, temperature=0.85, max_tokens=700)
         answer = answer.strip()
 
         log_request("ask", data=data, email=get_authenticated_email(),
