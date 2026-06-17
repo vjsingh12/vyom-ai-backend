@@ -1699,6 +1699,7 @@ def get_numerology():
         lp = profile['life_path']; expr = profile['expression']; soul = profile['soul_urge']
         pers = profile['personality']; bday = profile['birthday']; mat = profile['maturity']
         py = profile['personal_year']; lucky = profile['lucky']
+        nres = profile.get('name_resonance', {})
 
         prompt = f"""You are Vayuman, a warm, wise numerology guide. Write a personal numerology reading for {first_name}, speaking directly to them by their first name. Base it ONLY on the calculated numbers below (these are computed precisely using the standard Pythagorean system — do not recalculate or change them).
 
@@ -1711,13 +1712,17 @@ def get_numerology():
 - Maturity {mat['number']} ({mat['meaning']}) — what they grow into later in life.
 - Personal Year (this year) {py['number']} ({py['meaning']}) — the theme of their year ahead.
 
+NAME RESONANCE (very important — this is the centrepiece of the reading):
+- Their name number is {nres.get('name_number')}, their core life-path number is {nres.get('life_path_number')}.
+- Resonance verdict: {nres.get('verdict')} — {nres.get('note')}
+
 INSTRUCTIONS:
-1. Open by addressing {first_name} by name in the first sentence.
-2. Write 4-6 warm, flowing sentences that weave these numbers into a coherent portrait — show how they relate to each other (where they reinforce, where they add contrast/texture), not a dry list.
-3. Be specific and confident in tone. For the Personal Year, give a confident, encouraging outlook for the year ahead — you may reference a favourable window/season — but frame it as guidance and likely themes, NEVER as a fixed guarantee or fated certainty.
-4. Keep it humane and grounded — practical wisdom, not vague mysticism.
+1. Open by addressing {first_name} by name, and lead with how their NAME resonates with their core number — this is the heart of the reading. Explain in warm, plain words what it means that their name and life-path numbers relate the way they do.
+2. Then weave the other numbers into a coherent portrait (2-3 sentences) — how they reinforce or add texture to each other.
+3. In this tradition, some people refine the spelling of their name to bring it into stronger harmony with their numbers (well-known figures have famously done so). Mention this gently as something that exists — but make clear that any such change should only ever be considered with a qualified numerologist, never done casually or alone. Do NOT suggest a specific new spelling yourself.
+4. Be warm, specific, and grounded. For the Personal Year, give an encouraging outlook — framed as guidance and likely themes, NEVER a fixed guarantee.
 5. Do NOT mention astrology, planets, or charts — this is a pure numerology reading.
-6. Plain text only — no markdown, no headings, no bullet points.
+6. Plain text only — no markdown, no headings, no bullet points. Around 6-8 sentences total.
 
 Write the reading now."""
 
