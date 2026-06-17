@@ -237,6 +237,80 @@ def lucky_profile(dob):
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Name resonance — how the name's number harmonises with the Life Path
+# ──────────────────────────────────────────────────────────────────────────
+
+# Traditional compatibility between single-digit numbers, grounded in the
+# friendship/neutrality/enmity of their ruling planets (the basis used in
+# Indian numerology for judging how a name number sits with a birth number).
+# For each number 1-9: friendly numbers, neutral numbers; the rest are tense.
+_NUMBER_FRIENDS = {
+    1: {1, 2, 3, 5, 9},
+    2: {1, 2, 3, 5},
+    3: {1, 2, 3, 5, 7, 9},
+    4: {1, 5, 6, 7},
+    5: {1, 5, 6, 3, 9},
+    6: {4, 5, 6, 8, 9},
+    7: {1, 4, 5, 7},
+    8: {5, 6, 8},
+    9: {1, 3, 5, 6, 9},
+}
+_NUMBER_NEUTRAL = {
+    1: {4, 7, 8},
+    2: {4, 7, 9},
+    3: {4, 6, 8},
+    4: {2, 3, 8, 9},
+    5: {2, 4, 7, 8},
+    6: {1, 2, 3, 7},
+    7: {2, 3, 6, 9},
+    8: {1, 3, 4, 7, 9},
+    9: {2, 4, 7, 8},
+}
+
+
+def name_resonance(full_name, dob):
+    """Analyse how the name's number (Expression/Destiny) resonates with the
+    Life Path (the core birth number). Returns the two numbers and a verdict
+    of 'strong' / 'neutral' / 'tension', plus a short plain-language note.
+
+    This describes the relationship only — it never prescribes a name change.
+    """
+    lp_full = life_path_number(dob)
+    expr_full = expression_number(full_name)
+    # Reduce master numbers to single digits for the compatibility lookup,
+    # since the friend/neutral tables are defined over 1-9.
+    lp = reduce_number(lp_full, keep_master=False)
+    nm = reduce_number(expr_full, keep_master=False)
+
+    if nm in _NUMBER_FRIENDS.get(lp, set()) or nm == lp:
+        verdict = "strong"
+        headline = "Your name resonates strongly with your core number"
+        note = ("Your name's number and your life-path number support one "
+                "another — your name works in your favour, amplifying your "
+                "natural strengths.")
+    elif nm in _NUMBER_NEUTRAL.get(lp, set()):
+        verdict = "neutral"
+        headline = "Your name sits in gentle balance with your core number"
+        note = ("Your name's number and your life-path number neither push nor "
+                "pull strongly — a steady, neutral footing that neither helps "
+                "nor hinders.")
+    else:
+        verdict = "tension"
+        headline = "Your name carries a quiet tension with your core number"
+        note = ("Your name's number and your life-path number pull in somewhat "
+                "different directions — a subtle friction some people choose to "
+                "explore further.")
+
+    return {
+        "name_number": expr_full,       # show the true (master-preserving) value
+        "life_path_number": lp_full,
+        "verdict": verdict,             # 'strong' | 'neutral' | 'tension'
+        "headline": headline,
+        "note": note,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Full profile
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -272,6 +346,7 @@ def full_numerology_profile(full_name, dob, target_year=None):
         "maturity":    pack(mat, CORE_MEANINGS),
         "personal_year": pack(py, PERSONAL_YEAR_THEMES),
         "lucky": lucky_profile(dob),
+        "name_resonance": name_resonance(full_name, dob),
     }
 
 
