@@ -1788,21 +1788,63 @@ def numerology_ask():
                 f"Maturity {profile['maturity']['number']}, "
                 f"Personal Year {profile['personal_year']['number']}")
 
+        # If the user is asking whether a SPECIFIC name/word resonates (e.g. a brand,
+        # page name, baby name, or alternate spelling), compute that name's number with
+        # the engine so the answer is mathematically correct — not guessed by the AI.
+        candidate_block = ""
+        try:
+            candidates = []
+            # 1) Anything in quotes — straight or curly
+            for m in re.findall(r'["“\'‘]([A-Za-z][A-Za-z .&-]{1,48})["”\'’]', question):
+                candidates.append(m.strip())
+            # 2) "name X", "named X", "called X", "page/brand/business X"
+            for m in re.findall(r'(?:name[d]?|called|page|brand|business|handle|title)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})', question):
+                candidates.append(m.strip())
+            # de-dup, keep order, drop the user's own name
+            seen = set(); cleaned = []
+            for c in candidates:
+                key = c.lower()
+                if key and key != full_name.lower() and key not in seen and len(c) >= 2:
+                    seen.add(key); cleaned.append(c)
+            lines = []
+            for c in cleaned[:3]:  # cap at 3 to keep it focused
+                try:
+                    num = numerology_engine.expression_number(c)
+                    lines.append(f'- "{c}" has a name number of {num}.')
+                except Exception:
+                    pass
+            if lines:
+                candidate_block = (
+                    "\n\nThe user mentioned the following name(s)/word(s). Their numbers have been "
+                    "calculated precisely for you using the standard Pythagorean system — use these EXACT "
+                    "values, do not recalculate:\n" + "\n".join(lines) +
+                    f"\n(For comparison, {first_name}'s own core numbers are: Life Path "
+                    f"{profile['life_path']['number']}, name/Expression {profile['expression']['number']}.)"
+                )
+        except Exception:
+            candidate_block = ""
+
         prompt = f"""You are Vayuman, a warm, wise numerology guide. {first_name} has asked you a question. Answer it using ONLY their numerology numbers below (computed with the standard Pythagorean system).
 
-{first_name}'s numbers: {nums}.
+{first_name}'s numbers: {nums}.{candidate_block}
 
 Their question: "{question}"
 
 INSTRUCTIONS:
 1. First check the question is genuine and coherent. If it's gibberish or not a real question, warmly ask them to rephrase (1-2 sentences).
 2. META-QUESTIONS: If they ask about the service itself (terms, privacy, pricing, how Vayuman works, what technology/AI it uses, or whether numerology/the readings are "real"/"true"/"accurate"/scientific), do NOT answer directly and do NOT confirm or deny whether it's true. Warmly redirect to them and their numbers, staying in character.
-3. ANSWER THE QUESTION DIRECTLY AND FIRST. Open your very first sentence with a clear, direct answer to exactly what they asked — the verdict, the yes/no/it-depends, or the timing — stated plainly. No preamble, no restating their question, no warm-up. Lead with the answer, then briefly explain.
-4. BE CONCISE AND CONCRETE. Get to the point like a sharp, caring advisor. No circling, no repetition, no piling on vague qualifiers. Ground it in just the one or two most relevant numbers (e.g. their Life Path, or their Personal Year for timing) — name them naturally, don't list all of them.
-5. For timing, give ONE clear window or the theme of their Personal Year, stated once and confidently — but frame it as guidance and likely themes, never a fixed guarantee or fated certainty. Don't hedge it repeatedly.
-6. Be decisive and honest — give a clear takeaway, not a string of possibilities.
+3. ANSWER DIRECTLY, AND SHOW THE NUMBERS. Lead with the clear verdict in the first line. If the question is whether a specific name, brand, page, or spelling resonates with them, structure your answer like this:
+   - State the name's number (use the pre-calculated value given above — never recalculate or guess it).
+   - Compare it directly to their core number(s): say plainly whether it's a strong match, neutral, or a tension, and why in one line (which qualities it amplifies or where it pulls differently).
+   - Give a short, vivid sense of what that name's energy "feels like" (1 line).
+   - If relevant (e.g. for a brand/Instagram/page name), say what it suits well.
+   - End with a one-line clear takeaway / verdict.
+   Keep each part to a single tight line — concrete, not flowery.
+4. For non-name questions (love, money, career, timing), still lead with the direct answer, ground it in the one or two most relevant numbers (e.g. Life Path, or Personal Year for timing), and give a clear takeaway. Don't list all their numbers.
+5. For timing, give ONE clear window or Personal-Year theme, stated once — framed as guidance and likely themes, never a fixed guarantee.
+6. Be decisive and concrete. No circling, no repetition, no vague stacks of "maybe/perhaps". Plain words.
 7. Do NOT mention astrology, planets, or birth charts — this is purely numerology.
-8. LENGTH: keep it tight — 3-5 sentences. Answer first, brief reasoning, then one practical next step. Plain text only — no markdown, no headings.
+8. You may use a few simple line breaks to keep the structure readable, but NO markdown symbols (no #, *, -, or bold). Keep the whole answer tight and scannable — not a wall of text, not a fortune cookie.
 
 Answer now."""
 
