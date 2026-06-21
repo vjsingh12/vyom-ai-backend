@@ -1801,6 +1801,12 @@ def numerology_ask():
             # 2) "name X", "named X", "called X", "page/brand/business X"
             for m in re.findall(r'(?:name[d]?|called|page|brand|business|handle|title)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})', question):
                 candidates.append(m.strip())
+            # 3) Any capitalised multi-word proper-noun phrase (e.g. "Mehandi Mandal"),
+            #    which is very likely the name/brand they're asking about.
+            for m in re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b', question):
+                candidates.append(m.strip())
+            # common sentence-start / filler words to ignore if they slip in
+            _STOP = {'does','do','is','are','should','would','can','what','when','will','the','my','a','an','i'}
             # de-dup, keep order, drop the user's own name
             seen = set(); cleaned = []
             for c in candidates:
@@ -1834,19 +1840,20 @@ Their question: "{question}"
 INSTRUCTIONS:
 1. First check the question is genuine and coherent. If it's gibberish or not a real question, warmly ask them to rephrase (1-2 sentences).
 2. META-QUESTIONS: If they ask about the service itself (terms, privacy, pricing, how Vayuman works, what technology/AI it uses, or whether numerology/the readings are "real"/"true"/"accurate"/scientific), do NOT answer directly and do NOT confirm or deny whether it's true. Warmly redirect to them and their numbers, staying in character.
-3. ANSWER DIRECTLY, AND SHOW THE NUMBERS. Lead with the clear verdict in the first line. If the question is whether a specific name, brand, page, or spelling resonates with them, structure your answer like this:
-   - State the name's number (use the pre-calculated value given above — never recalculate or guess it).
+3. CRITICAL — NEVER say a name's number is "not calculated", "not provided", "let's assume", or that you'll "give a general verdict" instead. When a name number is given to you in the section above, it HAS been calculated for you — state it as a confident fact and build the whole answer on it. Never hedge about whether you have the number. If, and only if, NO name number was provided above and the user asked about a specific name, briefly say you can look at that exact name if they confirm the spelling — do not invent or approximate a number.
+4. ANSWER DIRECTLY, AND SHOW THE NUMBER. Lead with the clear verdict in the first line. If the question is whether a specific name, brand, page, or spelling resonates with them, structure your answer like this:
+   - State the name's number plainly (e.g. "Mehandi Mandal carries a 9.") using the pre-calculated value above.
    - Compare it directly to their core number(s): say plainly whether it's a strong match, neutral, or a tension, and why in one line (which qualities it amplifies or where it pulls differently).
    - Give a short, vivid sense of what that name's energy "feels like" (1 line).
    - If relevant (e.g. for a brand/Instagram/page name), say what it suits well.
    - End with a one-line clear takeaway / verdict.
    Keep each part to a single tight line — concrete, not flowery.
-4. For non-name questions (love, money, career, timing), still lead with the direct answer, ground it in the one or two most relevant numbers (e.g. Life Path, or Personal Year for timing), and give a clear takeaway. Don't list all their numbers.
-5. For timing, give ONE clear window or Personal-Year theme, stated once — framed as guidance and likely themes, never a fixed guarantee.
-6. Be decisive and concrete. No circling, no repetition, no vague stacks of "maybe/perhaps". Plain words.
-7. Do NOT mention astrology, planets, or birth charts — this is purely numerology.
-8. You may use a few simple line breaks to keep the structure readable, but NO markdown symbols (no #, *, -, or bold). Keep the whole answer tight and scannable — not a wall of text, not a fortune cookie.
-9. GROUNDING RULE: Every substantive claim should trace back to a specific number (a name number, their Life Path, Personal Year, etc.) — not generic numerology-speak that could apply to anyone. If a sentence doesn't connect to an actual number, cut it.
+5. For non-name questions (love, money, career, timing), still lead with the direct answer, ground it in the one or two most relevant numbers (e.g. Life Path, or Personal Year for timing), and give a clear takeaway. Don't list all their numbers.
+6. For timing, give ONE clear window or Personal-Year theme, stated once — framed as guidance and likely themes, never a fixed guarantee.
+7. Be decisive and concrete. No circling, no repetition, no vague stacks of "maybe/perhaps". Plain words.
+8. Do NOT mention astrology, planets, or birth charts — this is purely numerology.
+9. You may use a few simple line breaks to keep the structure readable, but NO markdown symbols (no #, *, -, or bold). Keep the whole answer tight and scannable — not a wall of text, not a fortune cookie.
+10. GROUNDING RULE: Every substantive claim should trace back to a specific number (a name number, their Life Path, Personal Year, etc.) — not generic numerology-speak that could apply to anyone. If a sentence doesn't connect to an actual number, cut it.
 
 Answer now."""
 
