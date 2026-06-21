@@ -1649,10 +1649,11 @@ INSTRUCTIONS:
 6. TIMING: When timing matters (marriage, career, money), give ONE concrete favourable window grounded in their dasha/transits — name approximate years or a season (e.g. "late 2026 through 2028 looks strong"). State it once, confidently. Never give a fabricated hard guarantee or a single fixed date as certain fact — frame it as a strong, favourable window, not a promise. But say it plainly and once; do not hedge it to death.
 7. Be honest, including about likely challenges — a wise guide tells the truth kindly. But be decisive: give them a clear takeaway, not a list of possibilities.
 8. LENGTH: Keep it tight — 3-5 sentences for a genuine question. Answer first, one or two sentences of grounded reasoning, then one practical next step. Never pad it out.
+9. GROUNDING RULE: Every substantive claim you make should trace back to a specific placement in their chart (a planet, dasha, or house influence) — not generic astrology-speak that could apply to anyone. If a sentence doesn't connect to their actual chart, cut it.
 
 Respond with ONLY your answer as plain text — no JSON, no markdown formatting, no headers."""
 
-        answer = call_ai(prompt, temperature=0.85, max_tokens=700)
+        answer = call_ai(prompt, temperature=0.65, max_tokens=700)
         answer = answer.strip()
 
         log_request("ask", data=data, email=get_authenticated_email(),
@@ -1845,10 +1846,11 @@ INSTRUCTIONS:
 6. Be decisive and concrete. No circling, no repetition, no vague stacks of "maybe/perhaps". Plain words.
 7. Do NOT mention astrology, planets, or birth charts — this is purely numerology.
 8. You may use a few simple line breaks to keep the structure readable, but NO markdown symbols (no #, *, -, or bold). Keep the whole answer tight and scannable — not a wall of text, not a fortune cookie.
+9. GROUNDING RULE: Every substantive claim should trace back to a specific number (a name number, their Life Path, Personal Year, etc.) — not generic numerology-speak that could apply to anyone. If a sentence doesn't connect to an actual number, cut it.
 
 Answer now."""
 
-        answer = call_ai(prompt, temperature=0.85, max_tokens=700)
+        answer = call_ai(prompt, temperature=0.65, max_tokens=700)
         log_request("numerology_ask", data=data, email=get_authenticated_email(),
                     question=question, output=answer)
         return jsonify({"answer": answer.strip()})
