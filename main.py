@@ -1567,109 +1567,50 @@ Output ONLY the tagged sections above, nothing else — no preamble, no closing 
 
 @app.route('/ask', methods=['POST'])
 def ask_vyom():
-    """
-    POST /ask
-    Body: { "name": "...", "lagna": "...", "rashi": "...", "nakshatra": "...",
-            "pada": 1, "dashaLord": "...", "antardasha": "...",
-            "planets_summary": "...", "today": "...", "question": "..." }
-    Returns: { "answer": "..." }
-    Free-form Q&A grounded in the user's real chart — finance, love, career, health, anything.
-    """
     try:
         data = request.get_json()
-        if not (os.environ.get('GEMINI_API_KEY') or os.environ.get('GROQ_API_KEY')):
-            return jsonify({"error": "Server not configured: missing AI provider key"}), 500
+        if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("GROQ_API_KEY"):
+            return jsonify(error="Server not configured — missing AI provider key"), 500
 
-        question = (data.get('question') or '').strip()
+        question = (data.get("question") or "").strip()
         if not question:
-            return jsonify({"error": "No question provided"}), 400
+            return jsonify(error="No question provided"), 400
 
-        lang_code = data.get('lang', 'en')
-        lang_name = LANGUAGE_NAMES.get(lang_code, 'English')
-        ASK_PLANET_NATIVE = {
-            'hi': "Use natural Hindi planet names in Devanagari (सूर्य, चंद्र, मंगल, बुध, गुरु, शुक्र, शनि, राहु, केतु).",
-            'pa': "Use natural Punjabi (Gurmukhi) planet names (ਸੂਰਜ, ਚੰਦ, ਮੰਗਲ, ਬੁੱਧ, ਗੁਰੂ, ਸ਼ੁੱਕਰ, ਸ਼ਨੀ, ਰਾਹੂ, ਕੇਤੂ).",
-            'ta': "Use natural Tamil planet names (சூரியன், சந்திரன், செவ்வாய், புதன், குரு, சுக்கிரன், சனி, ராகு, கேது).",
-            'te': "Use natural Telugu planet names (సూర్యుడు, చంద్రుడు, కుజుడు, బుధుడు, గురువు, శుక్రుడు, శని, రాహువు, కేతువు).",
-            'zh': "Use natural Chinese planet names (太阳, 月亮, 火星, 水星, 木星, 金星, 土星, 罗睺, 计都).",
-        }
-        if lang_code == 'en':
-            ask_language_instruction = (
-                "Respond entirely in English. Use standard ENGLISH planet names only "
-                "(Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu, Ketu) — never Sanskrit names like Surya, Shani, Mangal."
-            )
-        else:
-            ask_native = ASK_PLANET_NATIVE.get(lang_code, "")
-            ask_language_instruction = (
-                f"Respond ENTIRELY and PURELY in {lang_name}, in {lang_name}'s native script "
-                f"(not transliterated/romanized). {ask_native} Do NOT mix English planet names or other "
-                f"English words into the {lang_name} text. Keep only 'Vayuman' as-is. Write every sentence in pure {lang_name}."
-            )
+        firstname = (data.get("name") or "Seeker").split()[0]
+        firstname = firstname[0].upper() + firstname[1:] if firstname else "Seeker"
 
-        ask_is_minor = bool(data.get('is_minor', False))
-        ask_minor_instruction = ""
-        if ask_is_minor:
-            ask_minor_instruction = (
-                "\n\nIMPORTANT — THIS CHART BELONGS TO A MINOR (under 18). The person asking is the child's "
-                "parent or guardian. Answer in the THIRD PERSON about the child, addressed to the parent/guardian. "
-                "You may discuss the child's nature, temperament, strengths, talents, interests, learning, wellbeing, "
-                "friendships, character, spiritual/inner qualities, and the kinds of paths or fields they may naturally "
-                "lean toward as they grow (framed as gentle, non-deterministic inclinations to nurture — never fixed "
-                "predictions). Encourage parental guidance and involvement. Do NOT give any remedy, ritual, gemstone, "
-                "or remedial prescription. ABSOLUTELY NO romantic, relationship, marriage, or adult content of any kind. "
-                "If the question touches the child's future marriage or love life, gently redirect to age-appropriate "
-                "guidance about their growth, and suggest the parent revisit such topics when the child is older. "
-                "Keep the tone gentle, hopeful, and reassuring.\n"
-            )
+        prompt = f"""You are Vayuman — an elite, emotionally intelligent Vedic astrology guide.
+Your voice is calm, warm, direct, and human. You never use jargon.
 
-        prompt = f"""You are Vayuman — a deeply wise, emotionally intelligent Vedic astrology guide. Your voice is calm, warm, direct, and human. You never use jargon. You speak like a trusted friend who happens to understand the cosmos deeply.
-{ask_minor_instruction}
-{data.get('name', 'Seeker')} has come to you with a real question about their life. Use their actual Vedic chart to answer it honestly and specifically — this is a real-time consultation, not a generic horoscope.
+{firstname} has come to you with a real question. Answer it using ONLY their actual Vedic chart below.
 
-Their Vedic chart details:
+Their Vedic chart:
 - Lagna (Ascendant): {data.get('lagna')}
 - Moon Sign (Rashi): {data.get('rashi')}
-- Nakshatra: {data.get('nakshatra')} (Pada {data.get('pada')})
-- Current Mahadasha: {data.get('dashaLord')}
-- Current Antardasha: {data.get('antardasha')}
-- Planetary placements (house positions relative to their Lagna): {data.get('planets_summary')}
-- Today's date: {data.get('today')}
+- Nakshatra: {data.get('nakshatra')}
+- Current Mahadasha lord: {data.get('dashaLord')}
+- Current Antardasha lord: {data.get('antardasha')}
+- Planetary placements: {data.get('planets_summary')}
 
-Their question:
-"{question}"
-
-LANGUAGE: {ask_language_instruction}
+Their question: {question}
 
 INSTRUCTIONS:
-1. First, check whether the question is a genuine, coherent question (even if vague, casual, or oddly phrased). If it's gibberish, random characters, a string of unrelated words, or otherwise doesn't form a real question — gently and warmly ask them to rephrase or share what's actually on their mind. Do NOT invent an astrological answer to nonsense. Keep this redirect short (1-3 sentences) and kind.
-2. META-QUESTIONS: If the question is about the service itself rather than the person's life — e.g. about Vayuman's terms, privacy, pricing, how Vayuman works, what technology or AI it uses, whether astrology/the readings are "real", "true", "accurate", or scientifically valid — do NOT answer it directly and do NOT comment on whether the readings are true. Instead, warmly turn back toward the person and their chart, staying in character. Never break character, never disparage astrology, never discuss the app's mechanics.
-3. ANSWER THE QUESTION DIRECTLY AND FIRST. Open your very first sentence with a clear, direct answer to exactly what they asked — yes/no/it depends, the timing, the verdict — stated plainly. Do not open with preamble, context-setting, or a restatement of their question. Lead with the answer, then explain.
-4. BE CONCISE AND CONCRETE. Get to the point the way a sharp, caring advisor would. No circling, no repeating yourself, no stacking vague "maybe/perhaps/it could be" qualifiers. Say what you mean in plain words. One brief chart reference is enough to ground it — don't pile on astrological detail.
-5. Ground the answer in their actual placements by naming the one or two most relevant influences in plain language (no "8th house" jargon). If they ask about a specific situation (a job, a relationship, an investment, a time to act), engage that exact situation directly.
-6. TIMING: When timing matters (marriage, career, money), give ONE concrete favourable window grounded in their dasha/transits — name approximate years or a season (e.g. "late 2026 through 2028 looks strong"). State it once, confidently. Never give a fabricated hard guarantee or a single fixed date as certain fact — frame it as a strong, favourable window, not a promise. But say it plainly and once; do not hedge it to death.
-7. Be honest, including about likely challenges — a wise guide tells the truth kindly. But be decisive: give them a clear takeaway, not a list of possibilities.
-8. LENGTH: Keep it tight — 3-5 sentences for a genuine question. Answer first, one or two sentences of grounded reasoning, then one practical next step. Never pad it out.
-9. GROUNDING RULE: Every substantive claim you make should trace back to a specific placement in their chart (a planet, dasha, or house influence) — not generic astrology-speak that could apply to anyone. If a sentence doesn't connect to their actual chart, cut it.
-
-Respond with ONLY your answer as plain text — no JSON, no markdown formatting, no headers."""
-
-        answer = call_ai(prompt, temperature=0.65, max_tokens=700)
-        answer = answer.strip()
-
-        log_request("ask", data=data, email=get_authenticated_email(),
-                    question=question, output=answer)
-        return jsonify({"answer": answer})
+1. ANSWER DIRECTLY: State the verdict, yes/no, or timing plainly in the first sentence. No preamble.
+2. ACCURACY: Every claim MUST trace to a specific placement in their chart. If it's generic, delete it.
+3. CONCRETE: Say what you mean in plain words. No stacking vague "maybe" qualifiers.
+4. TIMING: Give ONE clear window tied to their Mahadasha ({data.get('dashaLord')}) and Antardasha ({data.get('antardasha')}).
+5. HONESTY: If there is friction, name it clearly, then give the path forward.
+6. LENGTH: 3-5 sentences for simple questions. Up to 8 for complex ones. NEVER PAD.
+7. NO FLUFF: Never say "trust the universe" or "embrace the journey." Ground everything in the chart.
+"""
+        answer = call_ai(prompt, temperature=0.65, max_tokens=900)
+        log_request("ask", data=data, email=get_authenticated_email(), question=question, output=answer.strip())
+        return jsonify(answer=answer.strip())
 
     except RateLimitError as e:
-        return jsonify({"error": str(e), "rate_limited": True}), 429
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode('utf-8')
-        if e.code == 429:
-            return jsonify({"error": "Vayuman is experiencing very high demand right now. Please try again in a few minutes.", "rate_limited": True}), 429
-        return jsonify({"error": f"Groq API error ({e.code}): {error_body}"}), 500
+        return jsonify(error=str(e), rate_limited=True), 429
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify(error=str(e)), 500
 
 @app.route('/numerology', methods=['POST'])
 def get_numerology():
@@ -1760,117 +1701,86 @@ Do NOT mention astrology, planets, or charts — this is a pure numerology readi
 
 @app.route('/numerology-ask', methods=['POST'])
 def numerology_ask():
-    """Answer a user's question based on their numerology profile."""
     try:
         data = request.get_json() or {}
-        question = (data.get('question') or '').strip()
-        full_name = (data.get('name') or '').strip()
-        dob = (data.get('dob') or '').strip()
-        if not question:
-            return jsonify({"error": "No question provided"}), 400
-        if not full_name or not dob:
-            return jsonify({"error": "Missing name or date of birth"}), 400
-        if not (os.environ.get('GEMINI_API_KEY') or os.environ.get('GROQ_API_KEY')):
-            return jsonify({"error": "Server not configured: missing AI provider key"}), 500
+        question = (data.get('question') or "").strip()
+        fullname = (data.get('name') or "").strip()
+        dob = (data.get('dob') or "").strip()
 
-        try:
-            profile = numerology_engine.full_numerology_profile(full_name, dob)
-        except Exception as e:
-            return jsonify({"error": f"Could not read those details: {e}"}), 400
+        if not question or not fullname or not dob:
+            return jsonify(error="Missing question, name or dob"), 400
 
-        first_name = full_name.split()[0]
-        first_name = first_name[:1].upper() + first_name[1:] if first_name else "Seeker"
+        profile = numerology_engine.full_numerology_profile(fullname, dob)
+        firstname = fullname.split()[0].capitalize() if fullname else "Seeker"
 
-        nums = (f"Life Path {profile['life_path']['number']}, "
-                f"Expression {profile['expression']['number']}, "
-                f"Soul Urge {profile['soul_urge']['number']}, "
-                f"Personality {profile['personality']['number']}, "
-                f"Birthday {profile['birthday']['number']}, "
-                f"Maturity {profile['maturity']['number']}, "
-                f"Personal Year {profile['personal_year']['number']}")
+        # Parse question for candidate names to breakdown
+        candidates = []
+        for m in re.findall(r'(?i)(?:name|named|called|page|brand|business|handle|title)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})', question):
+            candidates.append(m.strip())
 
-        # If the user is asking whether a SPECIFIC name/word resonates (e.g. a brand,
-        # page name, baby name, or alternate spelling), compute that name's number with
-        # the engine so the answer is mathematically correct — not guessed by the AI.
-        candidate_block = ""
-        try:
-            candidates = []
-            # 1) Anything in quotes — straight or curly
-            for m in re.findall(r'["“\'‘]([A-Za-z][A-Za-z .&-]{1,48})["”\'’]', question):
-                candidates.append(m.strip())
-            # 2) "name X", "named X", "called X", "page/brand/business X"
-            for m in re.findall(r'(?:name[d]?|called|page|brand|business|handle|title)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})', question):
-                candidates.append(m.strip())
-            # 3) Any capitalised multi-word proper-noun phrase (e.g. "Mehandi Mandal"),
-            #    which is very likely the name/brand they're asking about.
-            for m in re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b', question):
-                candidates.append(m.strip())
-            # common sentence-start / filler words to ignore if they slip in
-            _STOP = {'does','do','is','are','should','would','can','what','when','will','the','my','a','an','i'}
-            # de-dup, keep order, drop the user's own name
-            seen = set(); cleaned = []
-            for c in candidates:
-                key = c.lower()
-                if key and key != full_name.lower() and key not in seen and len(c) >= 2:
-                    seen.add(key); cleaned.append(c)
-            lines = []
-            for c in cleaned[:3]:  # cap at 3 to keep it focused
+        seen = set()
+        cleaned = []
+        for c in candidates:
+            if c.lower() != fullname.lower() and c.lower() not in seen and len(c) > 2:
+                seen.add(c.lower())
+                cleaned.append(c)
+
+        # Build the step-by-step mathematical breakdown for the AI
+        candidate_blocks = []
+        if cleaned:
+            candidate_blocks.append("CALCULATED NAME BREAKDOWNS (Use these exact numbers, show your working!):")
+            for c in cleaned[:3]:
                 try:
-                    num = numerology_engine.expression_number(c)
-                    lines.append(f'- "{c}" has a name number of {num}.')
-                except Exception:
-                    pass
-            if lines:
-                candidate_block = (
-                    "\n\nThe user mentioned the following name(s)/word(s). Their numbers have been "
-                    "calculated precisely for you using the standard Pythagorean system — use these EXACT "
-                    "values, do not recalculate:\n" + "\n".join(lines) +
-                    f"\n(For comparison, {first_name}'s own core numbers are: Life Path "
-                    f"{profile['life_path']['number']}, name/Expression {profile['expression']['number']}.)"
-                )
-        except Exception:
-            candidate_block = ""
+                    brk = numerology_engine.name_number_breakdown(c)
+                    lines = [f"Name: {c.upper()}"]
+                    for w in brk['words']:
+                        lines.append(f"{w['word']}")
+                        for l in w['letters']:
+                            lines.append(f"  {l['letter']} = {l['value']}")
+                        lines.append(f"Word Total = {w['total']} → reduced = {w['reduced']}")
+                    lines.append(f"Full Name Total: {brk['full_total']} → Final Name Number = {brk['full_reduced']}")
+                    candidate_blocks.append("\n".join(lines))
+                except Exception: pass
 
-        prompt = f"""You are Vayuman, a warm, wise numerology guide. {first_name} has asked you a question. Answer it using ONLY their numerology numbers below (computed with the standard Pythagorean system).
+        candidate_context = "\n\n".join(candidate_blocks)
 
-{first_name}'s numbers: {nums}.{candidate_block}
+        prompt = f"""You are Vayuman — an elite, precision-focused numerology guide.
+{firstname} has asked you a question. Answer it using ONLY their Pythagorean numerology numbers below.
 
-Their question: "{question}"
+{firstname}'s core numbers:
+- Life Path: {profile['life_path']['number']}
+- Expression: {profile['expression']['number']}
+- Soul Urge: {profile['soul_urge']['number']}
+- Personality: {profile['personality']['number']}
+- Personal Year: {profile['personal_year']['number']}
+
+{candidate_context}
+
+Their question: {question}
 
 INSTRUCTIONS:
-1. First check the question is genuine and coherent. If it's gibberish or not a real question, warmly ask them to rephrase (1-2 sentences).
-2. META-QUESTIONS: If they ask about the service itself (terms, privacy, pricing, how Vayuman works, what technology/AI it uses, or whether numerology/the readings are "real"/"true"/"accurate"/scientific), do NOT answer directly and do NOT confirm or deny whether it's true. Warmly redirect to them and their numbers, staying in character.
-3. CRITICAL — NEVER say a name's number is "not calculated", "not provided", "let's assume", or that you'll "give a general verdict" instead. When a name number is given to you in the section above, it HAS been calculated for you — state it as a confident fact and build the whole answer on it. Never hedge about whether you have the number. If, and only if, NO name number was provided above and the user asked about a specific name, briefly say you can look at that exact name if they confirm the spelling — do not invent or approximate a number.
-4. ANSWER DIRECTLY, AND SHOW THE NUMBER. Lead with the clear verdict in the first line. If the question is whether a specific name, brand, page, or spelling resonates with them, structure your answer like this:
-   - State the name's number plainly (e.g. "Mehandi Mandal carries a 9.") using the pre-calculated value above.
-   - Compare it directly to their core number(s): say plainly whether it's a strong match, neutral, or a tension, and why in one line (which qualities it amplifies or where it pulls differently).
-   - Give a short, vivid sense of what that name's energy "feels like" (1 line).
-   - If relevant (e.g. for a brand/Instagram/page name), say what it suits well.
-   - End with a one-line clear takeaway / verdict.
-   Keep each part to a single tight line — concrete, not flowery.
-5. For non-name questions (love, money, career, timing), still lead with the direct answer, ground it in the one or two most relevant numbers (e.g. Life Path, or Personal Year for timing), and give a clear takeaway. Don't list all their numbers.
-6. For timing, give ONE clear window or Personal-Year theme, stated once — framed as guidance and likely themes, never a fixed guarantee.
-7. Be decisive and concrete. No circling, no repetition, no vague stacks of "maybe/perhaps". Plain words.
-8. Do NOT mention astrology, planets, or birth charts — this is purely numerology.
-9. You may use a few simple line breaks to keep the structure readable, but NO markdown symbols (no #, *, -, or bold). Keep the whole answer tight and scannable — not a wall of text, not a fortune cookie.
-10. GROUNDING RULE: Every substantive claim should trace back to a specific number (a name number, their Life Path, Personal Year, etc.) — not generic numerology-speak that could apply to anyone. If a sentence doesn't connect to an actual number, cut it.
+1. IF INVOLVING A NAME OR BRAND:
+   — ALWAYS show the full letter-by-letter Pythagorean calculation using the exact data provided.
+   — Compare the name number to their Life Path ({profile['life_path']['number']}).
+   — Give a clear VERDICT (strong, neutral, tension) and explain what that energy feels like.
+   — Use formatting (emoji headers like 🔢 Calculation, ⚖️ Verdict).
+   — End with a 🧠 Simple takeaway.
 
-Answer now."""
+2. FOR ALL OTHER QUESTIONS:
+   — Answer directly in the very first line (verdict/timing). No preamble.
+   — Ground the answer in 1-2 relevant numbers (e.g. "In your Personal Year {profile['personal_year']['number']}...").
+   — Be concise (4-6 sentences). Give a clear, decisive takeaway.
 
-        answer = call_ai(prompt, temperature=0.65, max_tokens=700)
-        log_request("numerology_ask", data=data, email=get_authenticated_email(),
-                    question=question, output=answer)
-        return jsonify({"answer": answer.strip()})
+3. TONE: Direct and concrete. NEVER use vague fluff ("trust the universe"). Every sentence must tie to a real number.
+"""
+        answer = call_ai(prompt, temperature=0.65, max_tokens=1200)
+        log_request("numerology_ask", data=data, email=get_authenticated_email(), question=question, output=answer)
+        return jsonify(answer=answer.strip())
 
     except RateLimitError as e:
-        return jsonify({"error": str(e), "rate_limited": True}), 429
-    except urllib.error.HTTPError as e:
-        if e.code == 429:
-            return jsonify({"error": "Vayuman is experiencing very high demand right now. Please try again in a few minutes.", "rate_limited": True}), 429
-        return jsonify({"error": str(e)}), 500
+        return jsonify(error=str(e), rate_limited=True), 429
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify(error=str(e)), 500
 
 @app.route('/health', methods=['GET'])
 def health():
