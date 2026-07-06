@@ -1579,6 +1579,31 @@ def ask_vyom():
         firstname = (data.get("name") or "Seeker").split()[0]
         firstname = firstname[0].upper() + firstname[1:] if firstname else "Seeker"
 
+        history = data.get('history') or []
+        history_block = ""
+        if isinstance(history, list) and history:
+            turns = []
+            for turn in history[-6:]:
+                if not isinstance(turn, dict):
+                    continue
+                h_q = str(turn.get('question', ''))[:300].strip()
+                h_a = str(turn.get('answer', ''))[:600].strip()
+                if h_q and h_a:
+                    turns.append(f"Q: {h_q}\nA: {h_a}")
+            if turns:
+                history_block = (
+                    "EARLIER IN THIS CONVERSATION (for context only — do not re-answer these, "
+                    "just use them to understand what the person is referring to if their new "
+                    "question builds on one, and to avoid repeating the same dasha/timing window "
+                    "as a crutch if it's already been covered):\n" + "\n\n".join(turns) + "\n"
+                )
+
+        BANNED_FILLER = ["great potential", "amazing things", "the universe has a plan",
+                          "your journey", "trust the process", "everything happens for a reason",
+                          "you are destined", "special and unique", "align with the universe",
+                          "positive energy", "the stars have blessed you", "embrace the journey"]
+        banned_filler_text = "; ".join(f'"{p}"' for p in BANNED_FILLER)
+
         prompt = f"""You are Vayuman — an elite, emotionally intelligent Vedic astrology guide.
 Your voice is calm, warm, direct, and human. You never use jargon.
 
@@ -1592,16 +1617,19 @@ Their Vedic chart:
 - Current Antardasha lord: {data.get('antardasha')}
 - Planetary placements: {data.get('planets_summary')}
 
+{history_block}
 Their question: {question}
 
 INSTRUCTIONS:
-1. ANSWER DIRECTLY: State the verdict, yes/no, or timing plainly in the first sentence. No preamble.
-2. ACCURACY: Every claim MUST trace to a specific placement in their chart. If it's generic, delete it.
-3. CONCRETE: Say what you mean in plain words. No stacking vague "maybe" qualifiers.
-4. TIMING: Give ONE clear window tied to their Mahadasha ({data.get('dashaLord')}) and Antardasha ({data.get('antardasha')}).
-5. HONESTY: If there is friction, name it clearly, then give the path forward.
-6. LENGTH: 3-5 sentences for simple questions. Up to 8 for complex ones. NEVER PAD.
-7. NO FLUFF: Never say "trust the universe" or "embrace the journey." Ground everything in the chart.
+0. USE THE EARLIER CONVERSATION ABOVE (if present) to understand references like "him", "that", "the same thing", or a topic mentioned in a prior answer. Resolve the reference silently and answer the new question directly — do not ask the person to repeat information they already gave.
+1. OPEN BY ECHOING THEIR QUESTION: state your answer using language that picks up the actual words of what they asked — if they asked "will this relationship work", open addressing "this relationship" in your own words, not a generic opener like "Based on your chart...". State the verdict, yes/no, or timing plainly in this first sentence. No preamble before it.
+2. COMMIT TO A STANCE: give ONE clear answer, not a menu of possibilities. Do not hedge with multiple "maybe" or "it could go either way" qualifiers stacked in the same answer — pick the most chart-grounded read and state it with confidence, then note the one real caveat if there is one.
+3. NEVER GO IN CIRCLES: do not restate the question back rhetorically ("You're asking whether..."), do not repeat the same point in different words to pad length, and do not end by summarizing what you already just said. Every sentence must add new information.
+4. ACCURACY: Every claim MUST trace to a specific placement in their chart. If it's generic enough to apply to anyone, delete it.
+5. TIMING: Give ONE clear window tied to their Mahadasha ({data.get('dashaLord')}) and Antardasha ({data.get('antardasha')}) — but if a timing window tied to this same dasha/antardasha was already given in an earlier answer above, don't repeat it verbatim; either add new specificity or skip timing this time.
+6. HONESTY: If there is friction, name it clearly, then give the path forward.
+7. LENGTH: 3-5 sentences for simple questions. Up to 8 for complex ones. NEVER PAD.
+8. NO FLUFF: never use these phrases or close paraphrases of them: {banned_filler_text}. Ground everything in the chart instead.
 """
         answer = call_ai(prompt, temperature=0.65, max_tokens=900)
         log_request("ask", data=data, email=get_authenticated_email(), question=question, output=answer.strip())
@@ -1859,11 +1887,13 @@ INSTRUCTIONS:
 
 2. FOR ALL OTHER QUESTIONS:
    — Open by directly answering using language that echoes the actual words of their question — if they asked "should I take this job", open addressing "this job" or "this move" in your own words, not a generic opener. This makes the answer feel like it's actually responding to what they asked, not a template. No preamble before this.
+   — COMMIT TO A STANCE: give ONE clear answer, not a menu of possibilities. Do not hedge with multiple "maybe" or "it could go either way" qualifiers stacked in the same answer — pick the most number-grounded read and state it with confidence, then note the one real caveat if there is one.
+   — NEVER GO IN CIRCLES: do not restate the question back rhetorically ("You're asking whether..."), do not repeat the same point in different words to pad length, and do not end by summarizing what you already just said. Every sentence must add new information.
    — Ground the answer in whichever 1-2 numbers are GENUINELY most relevant to THIS question — Life Path, Expression, Soul Urge, and Personality are usually more relevant than Personal Year for most questions. Only bring up Personal Year when the question is specifically about timing, this year, or what's currently happening — never as a default filler. Do not mention Personal Year in every answer; most answers shouldn't touch it at all.
    — CHECK THE EARLIER CONVERSATION ABOVE: if Personal Year has already been mentioned in any prior answer this session, do NOT mention it again here even if it feels relevant — treat it as already covered and lean on a different number instead. Personal Year gets used once per conversation, never more.
    — Be concise (4-6 sentences). Give a clear, decisive takeaway.
 
-3. TONE: Direct and concrete. NEVER use vague fluff ("trust the universe"). Every sentence must tie to a real number.
+3. TONE: Direct and concrete. NEVER use these phrases or close paraphrases of them: "great potential", "amazing things", "the universe has a plan", "your journey", "trust the process", "everything happens for a reason", "you are destined", "special and unique", "align with the universe", "positive energy", "the stars have blessed you". Every sentence must tie to a real number.
 """
         answer = call_ai(prompt, temperature=0.65, max_tokens=1200)
         log_request("numerology_ask", data=data, email=get_authenticated_email(), question=question, output=answer)
