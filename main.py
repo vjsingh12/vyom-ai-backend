@@ -1138,6 +1138,74 @@ class RateLimitError(Exception):
     pass
 
 
+# ── ASK VAYUMAN — DATA SUFFICIENCY GATE (Stage A, deterministic) ───────────
+# Runs in plain Python before any AI call. The point: whether required data
+# is missing must never be left for the LLM to notice mid-generation — that's
+# how you get a confident "neutral" verdict invented over missing data. This
+# gate decides sufficiency up front, and the prompt is then told explicitly
+# what it may and may not claim.
+
+SECOND_PERSON_PATTERN = re.compile(
+    r'(?i)\b(wife|husband|spouse|partner|girlfriend|boyfriend|fianc[ée]e?|'
+    r'friend|colleague|coworker|son|daughter|child|brother|sister|'
+    r'mother|father|brand|business|company|product|baby|'
+    r'person|someone|him|her|them|this (?:guy|girl|man|woman))\b'
+)
+COMPATIBILITY_KEYWORDS = re.compile(
+    r'(?i)\b(resonate|compatib|match(?:es)?|suit(?:s|able)?|right for me|good for me|'
+    r'connection|chemistry|work out|meant to be)\b'
+)
+TIMING_KEYWORDS = re.compile(
+    r'(?i)\b(when will|what year|how soon|timing|will i ever|by when|this year|next year)\b'
+)
+HEALTH_KEYWORDS = re.compile(
+    r'(?i)\b(illness|disease|health|sick|diagnos|pregnan|surgery|\bdie\b|death)\b'
+)
+
+# Answers containing any of these, when the gate found insufficient data,
+# indicate the AI invented a verdict anyway — caught in Stage C below.
+VERDICT_WORDS = re.compile(
+    r'(?i)\b(resonates?|compatible|neutral energy|the energy feels|verdict:|strong (?:match|connection))\b'
+)
+NOT_CALCULATED_PHRASES = re.compile(
+    r'(?i)(not calculated|not provided|we\'?d need|let\'?s assume|no direct calculation)'
+)
+
+
+def check_sufficiency(question, has_named_target=False):
+    """
+    Stage A — deterministic, no LLM call.
+    has_named_target: True if a second person's data was actually extractable
+    (e.g. a name was detected and calculated). Neither current app flow
+    collects a partner's DOB/chart, so this is always about whether a NAME
+    was given, not full birth data.
+    """
+    references_second_person = bool(SECOND_PERSON_PATTERN.search(question))
+    asks_compatibility = bool(COMPATIBILITY_KEYWORDS.search(question))
+    needs_target_data = references_second_person and asks_compatibility
+    return {
+        "needs_target_data": needs_target_data,
+        "target_data_available": has_named_target,
+        "insufficient": needs_target_data and not has_named_target,
+        "asks_timing": bool(TIMING_KEYWORDS.search(question)),
+        "touches_health": bool(HEALTH_KEYWORDS.search(question)),
+    }
+
+
+def violates_sufficiency_contract(answer_text, gate):
+    """
+    Stage C — deterministic post-check. If the gate found insufficient data
+    but the answer contains a verdict word, OR contains one of the banned
+    'not calculated' phrases we explicitly forbid, flag it so the caller can
+    fall back to a safe template instead of showing a bad answer.
+    """
+    if gate["insufficient"] and VERDICT_WORDS.search(answer_text or ""):
+        return True
+    if NOT_CALCULATED_PHRASES.search(answer_text or ""):
+        return True
+    return False
+
+
 # Which model provider to use: 'gemini' (default) or 'groq'.
 AI_PROVIDER = os.environ.get('AI_PROVIDER', 'gemini').lower()
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
@@ -1604,6 +1672,43 @@ def ask_vyom():
                           "positive energy", "the stars have blessed you", "embrace the journey"]
         banned_filler_text = "; ".join(f'"{p}"' for p in BANNED_FILLER)
 
+        # Stage A — deterministic sufficiency gate. This app never collects a
+        # second person's birth chart, so any compatibility-style question
+        # about someone else is, by definition, missing their data.
+        gate = check_sufficiency(question, has_named_target=False)
+
+        sufficiency_instruction = ""
+        if gate["insufficient"]:
+            sufficiency_instruction = (
+                "\nDATA SUFFICIENCY — IMPORTANT: this question asks you to judge a connection "
+                "or compatibility with another person, but you have NO chart data for that person "
+                "at all (no birth chart was ever provided for them). You may NOT say the connection "
+                "'resonates', is 'compatible', 'neutral', or give any verdict about the OTHER person "
+                "or the pairing. Instead: clearly state that you'd need their birth details "
+                "(date, time, place) to judge the connection itself, THEN still give real, useful "
+                "insight from the asker's OWN chart alone (e.g. what their placements suggest they "
+                "need or tend toward in relationships/partnerships). Never use the words 'not "
+                "calculated', 'not provided', 'we'd need', or 'let's assume' — just plainly ask for "
+                "the missing birth details in one natural sentence.\n"
+            )
+
+        health_instruction = ""
+        if gate["touches_health"]:
+            health_instruction = (
+                "\nHEALTH QUESTION DETECTED: do not diagnose, predict, or name any illness. "
+                "You may speak generally about energy/vitality tendencies from the chart, but "
+                "explicitly note that for anything medical, a qualified professional should be "
+                "consulted.\n"
+            )
+
+        timing_instruction = ""
+        if gate["asks_timing"]:
+            timing_instruction = (
+                "\nTIMING QUESTION DETECTED: give a favourable WINDOW (a season or year range) "
+                "tied to dasha/antardasha timing — never a single guaranteed date, and never state "
+                "an outcome as certain.\n"
+            )
+
         prompt = f"""You are Vayuman — an elite, emotionally intelligent Vedic astrology guide.
 Your voice is calm, warm, direct, and human. You never use jargon.
 
@@ -1616,13 +1721,13 @@ Their Vedic chart:
 - Current Mahadasha lord: {data.get('dashaLord')}
 - Current Antardasha lord: {data.get('antardasha')}
 - Planetary placements: {data.get('planets_summary')}
-
+{sufficiency_instruction}{health_instruction}{timing_instruction}
 {history_block}
 Their question: {question}
 
 INSTRUCTIONS:
 0. USE THE EARLIER CONVERSATION ABOVE (if present) to understand references like "him", "that", "the same thing", or a topic mentioned in a prior answer. Resolve the reference silently and answer the new question directly — do not ask the person to repeat information they already gave.
-1. OPEN BY ECHOING THEIR QUESTION: state your answer using language that picks up the actual words of what they asked — if they asked "will this relationship work", open addressing "this relationship" in your own words, not a generic opener like "Based on your chart...". State the verdict, yes/no, or timing plainly in this first sentence. No preamble before it.
+1. OPEN BY ECHOING THEIR QUESTION: state your answer using language that picks up the actual words of what they asked — if they asked "will this relationship work", open addressing "this relationship" in your own words, not a generic opener like "Based on your chart...". State the verdict, yes/no, or timing plainly in this first sentence (unless the sufficiency note above says you can't give a verdict — then state what's missing plainly instead). No preamble before it.
 2. COMMIT TO A STANCE: give ONE clear answer, not a menu of possibilities. Do not hedge with multiple "maybe" or "it could go either way" qualifiers stacked in the same answer — pick the most chart-grounded read and state it with confidence, then note the one real caveat if there is one.
 3. NEVER GO IN CIRCLES: do not restate the question back rhetorically ("You're asking whether..."), do not repeat the same point in different words to pad length, and do not end by summarizing what you already just said. Every sentence must add new information.
 4. ACCURACY: Every claim MUST trace to a specific placement in their chart. If it's generic enough to apply to anyone, delete it.
@@ -1630,10 +1735,27 @@ INSTRUCTIONS:
 6. HONESTY: If there is friction, name it clearly, then give the path forward.
 7. LENGTH: 3-5 sentences for simple questions. Up to 8 for complex ones. NEVER PAD.
 8. NO FLUFF: never use these phrases or close paraphrases of them: {banned_filler_text}. Ground everything in the chart instead.
+9. NEVER SAY: "you will definitely marry this person", "this person is your soulmate", "your partner is cheating", "you will become rich", "you should leave your job", "you will get pregnant", "you are cursed", "your chart guarantees X", "you will die", "you will get sick".
 """
         answer = call_ai(prompt, temperature=0.65, max_tokens=900)
-        log_request("ask", data=data, email=get_authenticated_email(), question=question, output=answer.strip())
-        return jsonify(answer=answer.strip())
+        answer = answer.strip()
+
+        # Stage C — deterministic post-check. If the gate found insufficient
+        # data but the model invented a verdict anyway, fall back to a safe,
+        # honest template instead of showing the bad answer.
+        if violates_sufficiency_contract(answer, gate):
+            print(f"[ask_vyom] sufficiency contract violated, using fallback for question: {question[:80]}")
+            answer = (
+                f"{firstname}, I'd need their birth details — date, time, and place — to judge "
+                f"that connection properly, since I only have your chart to work from right now. "
+                f"From your side, your {data.get('rashi', 'Moon sign')} and current "
+                f"{data.get('dashaLord', 'Mahadasha')} period shape a lot of how you show up in "
+                f"relationships generally. Share their birth details and I can give you a real "
+                f"reading on the pairing itself."
+            )
+
+        log_request("ask", data=data, email=get_authenticated_email(), question=question, output=answer)
+        return jsonify(answer=answer)
 
     except RateLimitError as e:
         return jsonify(error=str(e), rate_limited=True), 429
@@ -1861,6 +1983,35 @@ def numerology_ask():
 
         candidate_context = "\n\n".join(candidate_blocks)
 
+        # Stage A — shared deterministic sufficiency gate (same one used by
+        # ask_vyom), plus health/timing flags for consistent handling.
+        gate = check_sufficiency(question, has_named_target=bool(cleaned))
+
+        health_instruction = ""
+        if gate["touches_health"]:
+            health_instruction = (
+                "\nHEALTH QUESTION DETECTED: do not diagnose, predict, or name any illness. "
+                "You may speak generally about energy/vitality tendencies from the numbers, but "
+                "explicitly note that for anything medical, a qualified professional should be "
+                "consulted.\n"
+            )
+
+        if cleaned:
+            name_instruction = """1. A NAME WAS CALCULATED — use it:
+   — ALWAYS show the full letter-by-letter Pythagorean calculation using the exact data provided above.
+   — Compare the name number to their Life Path ({lp}).
+   — Give a clear VERDICT (strong, neutral, tension) and explain what that energy feels like.
+   — Use formatting (emoji headers like 🔢 Calculation, ⚖️ Verdict).
+   — End with a 🧠 Simple takeaway.""".format(lp=profile['life_path']['number'])
+        elif gate["insufficient"]:
+            name_instruction = """1. THE QUESTION MENTIONS SOMEONE OR SOMETHING BY RELATION, NOT BY NAME (e.g. "my wife", "my brand") — no calculation is possible yet:
+   — Do NOT use the calculation-template formatting (no 🔢/⚖️/🧠 headers) — there is nothing calculated to show, so that structure would be empty theater.
+   — Do NOT say the connection "resonates", is "compatible", or "neutral" — no verdict of any kind about the other person or the pairing.
+   — Still give a genuinely useful answer using {firstname}'s own numbers where relevant (e.g. what their Life Path or Expression suggests they value or are drawn to in this kind of connection).
+   — End with ONE direct, warm sentence asking for the actual name, so Vayuman can calculate the exact resonance next time — phrased naturally, like "Tell me her name and I'll work out exactly how it lines up with your {lp}." Do not dwell on the limitation beyond this one sentence.""".format(firstname=firstname, lp=f"Life Path {profile['life_path']['number']}")
+        else:
+            name_instruction = "1. This question is not about a specific name or brand — skip straight to instruction 2 below."
+
         prompt = f"""You are Vayuman — an elite, precision-focused numerology guide.
 {firstname} has asked you a question. Answer it using ONLY their Pythagorean numerology numbers below.
 
@@ -1872,20 +2023,15 @@ def numerology_ask():
 - Personal Year: {profile['personal_year']['number']}
 
 {candidate_context}
-
+{health_instruction}
 {history_block}
 Their question: {question}
 
 INSTRUCTIONS:
 0. USE THE EARLIER CONVERSATION ABOVE (if present) to understand references like "her", "that", "the same thing", or a name/topic mentioned in a prior answer. Resolve the reference silently and answer the new question directly — do not ask the person to repeat information they already gave.
-1. IF INVOLVING A NAME OR BRAND:
-   — ALWAYS show the full letter-by-letter Pythagorean calculation using the exact data provided.
-   — Compare the name number to their Life Path ({profile['life_path']['number']}).
-   — Give a clear VERDICT (strong, neutral, tension) and explain what that energy feels like.
-   — Use formatting (emoji headers like 🔢 Calculation, ⚖️ Verdict).
-   — End with a 🧠 Simple takeaway.
+{name_instruction}
 
-2. FOR ALL OTHER QUESTIONS:
+2. FOR ALL OTHER QUESTIONS (or once instruction 1 above is handled):
    — Open by directly answering using language that echoes the actual words of their question — if they asked "should I take this job", open addressing "this job" or "this move" in your own words, not a generic opener. This makes the answer feel like it's actually responding to what they asked, not a template. No preamble before this.
    — COMMIT TO A STANCE: give ONE clear answer, not a menu of possibilities. Do not hedge with multiple "maybe" or "it could go either way" qualifiers stacked in the same answer — pick the most number-grounded read and state it with confidence, then note the one real caveat if there is one.
    — NEVER GO IN CIRCLES: do not restate the question back rhetorically ("You're asking whether..."), do not repeat the same point in different words to pad length, and do not end by summarizing what you already just said. Every sentence must add new information.
@@ -1893,11 +2039,28 @@ INSTRUCTIONS:
    — CHECK THE EARLIER CONVERSATION ABOVE: if Personal Year has already been mentioned in any prior answer this session, do NOT mention it again here even if it feels relevant — treat it as already covered and lean on a different number instead. Personal Year gets used once per conversation, never more.
    — Be concise (4-6 sentences). Give a clear, decisive takeaway.
 
-3. TONE: Direct and concrete. NEVER use these phrases or close paraphrases of them: "great potential", "amazing things", "the universe has a plan", "your journey", "trust the process", "everything happens for a reason", "you are destined", "special and unique", "align with the universe", "positive energy", "the stars have blessed you". Every sentence must tie to a real number.
+3. CRITICAL — NEVER say a number or calculation is "not calculated", "not provided", "we'd need", "let's assume", or any close paraphrase implying missing data. If genuinely nothing can be calculated (see instruction 1), ask for the missing name in the ONE natural sentence described above and move on — do not repeat or dwell on the limitation anywhere else in the answer.
+
+4. TONE: Direct and concrete. NEVER use these phrases or close paraphrases of them: "great potential", "amazing things", "the universe has a plan", "your journey", "trust the process", "everything happens for a reason", "you are destined", "special and unique", "align with the universe", "positive energy", "the stars have blessed you". Every sentence must tie to a real number.
 """
         answer = call_ai(prompt, temperature=0.65, max_tokens=1200)
+        answer = answer.strip()
+
+        # Stage C — deterministic post-check. Catches the exact failure mode
+        # from the wife-number example: a verdict invented over missing data.
+        if violates_sufficiency_contract(answer, gate):
+            print(f"[numerology_ask] sufficiency contract violated, using fallback for question: {question[:80]}")
+            answer = (
+                f"I can compare their numbers with yours, but I need their name or date of birth "
+                f"first. From your side, your Life Path {profile['life_path']['number']} "
+                f"({profile['life_path']['meaning'].rstrip('.').lower()}) and Expression "
+                f"{profile['expression']['number']} shape a lot of what you look for in this kind "
+                f"of connection. Share their name and I'll work out exactly how it lines up with "
+                f"your numbers."
+            )
+
         log_request("numerology_ask", data=data, email=get_authenticated_email(), question=question, output=answer)
-        return jsonify(answer=answer.strip())
+        return jsonify(answer=answer)
 
     except RateLimitError as e:
         return jsonify(error=str(e), rate_limited=True), 429
