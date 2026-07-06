@@ -1643,9 +1643,47 @@ def get_numerology():
         py = profile['personal_year']; lucky = profile['lucky']
         nres = profile.get('name_resonance', {})
 
-        prompt = f"""You are Vayuman, a warm, wise numerology guide. Write a personal numerology reading for {first_name}, speaking directly to them by their first name. Base it ONLY on the calculated numbers below (computed precisely using the standard Pythagorean system — do not recalculate or change them).
+        BANNED_FILLER = ["great potential", "amazing things", "the universe has a plan",
+                          "your journey", "trust the process", "everything happens for a reason",
+                          "you are destined", "special and unique", "align with the universe",
+                          "positive energy", "manifest your dreams", "the stars have blessed you"]
+        banned_filler_text = "; ".join(f'"{p}"' for p in BANNED_FILLER)
 
-{first_name}'s numbers:
+        def _contains_any(text, terms):
+            t = (text or "").lower()
+            return any(term in t for term in terms)
+
+        # ── Birth Grid (Psychomatrix / Arrows) — computed deterministically ──
+        grid = numerology_engine.birth_grid(dob)
+
+        cell_lines = []
+        for n in range(1, 10):
+            count = grid['counts'][n]
+            trait = grid['cell_traits'][n]
+            cell_lines.append(
+                f"- {trait} (number {n}): "
+                + (f"appears {count} time{'s' if count != 1 else ''}" if count else "absent")
+            )
+        cells_text = "\n".join(cell_lines)
+
+        arrows_present = grid['arrows']['present']
+        arrows_missing = grid['arrows']['missing']
+        arrows_text = ""
+        if arrows_present:
+            arrows_text += "Completed arrows:\n" + "\n".join(
+                f"- {a['name']}: {a['description']}" for a in arrows_present) + "\n"
+        if arrows_missing:
+            arrows_text += "Missing arrows:\n" + "\n".join(
+                f"- {a['name']}: {a['description']}" for a in arrows_missing)
+        if not arrows_text:
+            arrows_text = "No fully completed or fully missing lines in this grid."
+
+        # ── ONE unified prompt — both number systems feed the same reading,
+        # so the AI can draw real connections between them instead of two
+        # disconnected write-ups. ────────────────────────────────────────────
+        prompt = f"""You are Vayuman, a warm, wise numerology guide. Write ONE complete, unified personal numerology reading for {first_name}, speaking directly to them by their first name. Base it ONLY on the facts below (all computed precisely — do not recalculate or change any of it).
+
+{first_name}'s core numbers (Pythagorean system):
 - Life Path {lp['number']} ({lp['meaning']}) — their core purpose and life journey.
 - Expression/Destiny {expr['number']} ({expr['meaning']}) — natural talents and what they project.
 - Soul Urge {soul['number']} ({soul['meaning']}) — inner desires and motivation.
@@ -1655,38 +1693,65 @@ def get_numerology():
 - Personal Year (this year) {py['number']} ({py['meaning']}) — the theme of their year ahead.
 - Name resonance: their name number is {nres.get('name_number')} and their core life-path number is {nres.get('life_path_number')} — verdict: {nres.get('verdict')}.
 
-Write the reading in this shape (plain text, no markdown/headings/bullets, roughly 9-12 sentences across 3 short paragraphs):
+{first_name}'s birth grid (positions of digits from their date of birth):
+{cells_text}
 
-PARAGRAPH 1 — Open by addressing {first_name} by name. Draw out ONE genuinely interesting, specific insight about who they are, derived from how their numbers combine (e.g. a striking strength, an inner contrast, or a rare quality their particular number blend suggests). Make it feel like a small revelation, not generic.
+{arrows_text}
 
-PARAGRAPH 2 — This is the heart: give grounded, dynamic guidance across the LIFE SECTORS, drawing each from the relevant numbers — love & relationships, career & work, health & wellbeing, and money & finances. Make each sector specific to their numbers (don't just list — advise). For the year ahead, use their Personal Year {py['number']} to colour the timing and emphasis. Be confident and encouraging, but frame the future as likely themes and guidance, NEVER as a fixed guarantee.
+Write the reading in this shape (plain text, no markdown/headings/bullets, roughly 12-16 sentences across 4 short paragraphs):
 
-PARAGRAPH 3 — End with just a LIGHT touch (1-2 sentences) on how their name resonates with their core number, and — only if relevant — note gently that some people refine their name's spelling for closer harmony, to be explored only with a qualified numerologist, never alone. Do NOT suggest a specific spelling. Keep this brief; the reading is about their whole life, not mainly their name.
+PARAGRAPH 1 — Open by addressing {first_name} by name. Draw out ONE genuinely interesting, specific insight about who they are, ideally one that CONNECTS their core numbers to their birth grid (e.g. does a completed arrow reinforce their Life Path, or does a quiet cell sit in tension with their Expression number?). If there's a real connection, lead with it — that's the most compelling thing you can say. If the systems don't obviously connect for this person, lead with the single most distinctive fact instead (a master number, an unusually strong/weak alignment, a completed or missing arrow). Make it feel like a small revelation, not generic.
 
-Do NOT mention astrology, planets, or charts — this is a pure numerology reading. Warm, humane, specific."""
+PARAGRAPH 2 — Give grounded, dynamic guidance across the LIFE SECTORS: love & relationships, career & work, health & wellbeing, and money & finances. Draw each from whichever numbers or grid cells are actually relevant to that sector (don't force every number into every sector). For the year ahead, use their Personal Year {py['number']} to colour the timing.
 
-        interpretation = call_ai(prompt, temperature=0.8, max_tokens=900)
+PARAGRAPH 3 — Turn to the birth grid specifically: name the 2-3 strongest cells (highest counts) and any completed arrows by name, explaining what they add to the picture already painted. Then address the quietest cells (count 0) as growth areas to build deliberately, never as deficiencies, and name any missing arrows.
+
+PARAGRAPH 4 — End with a LIGHT touch (1-2 sentences) on how their name resonates with their core number, and — only if relevant — note gently that some people refine their name's spelling for closer harmony, to be explored only with a qualified numerologist, never alone. Do NOT suggest a specific spelling.
+
+GROUNDING RULE: every sentence describing a trait must name the specific number or cell/arrow it comes from (e.g. "Life Path 11", "Expression 8", "the arrow of determination", "memory, number 9"). A trait claim with nothing named is not acceptable — rewrite it so the source is explicit.
+
+NEVER use these phrases or close paraphrases of them: {banned_filler_text}.
+
+Do NOT mention astrology, planets, or charts — this is a pure numerology reading. Warm, humane, specific, and cohesive — it should read as ONE reading, not two topics stitched together."""
+
+        interpretation = call_ai(prompt, temperature=0.8, max_tokens=1400)
         interpretation = (interpretation or "").strip()
 
-        # Safety net: if the AI returns an empty response (e.g. blocked/empty
-        # candidate), build a meaningful interpretation from the numbers so the
-        # user never sees a blank reading.
+        # Safety net: if the AI returns an empty response, fall back to a
+        # deterministic reading built from both the numbers and the grid so
+        # the user never sees a blank reading.
         if not interpretation:
+            strongest = sorted(grid['counts'].items(), key=lambda kv: kv[1], reverse=True)
+            top_cell = next(((n, c) for n, c in strongest if c > 0), None)
+            arrow_line = (
+                f" Your grid also completes the {arrows_present[0]['name']}, {arrows_present[0]['description'].lower()}"
+                if arrows_present else ""
+            )
+            top_cell_line = (
+                f" Your birth grid reinforces this with {grid['cell_traits'][top_cell[0]]}, "
+                f"appearing {'twice' if top_cell[1] > 1 else 'once'}.{arrow_line}"
+                if top_cell else ""
+            )
             interpretation = (
                 f"{first_name}, your numbers tell a clear story. Your Life Path "
                 f"{lp['number']} speaks of {lp['meaning'].rstrip('.').lower()} — the heart of your journey. "
                 f"Your Expression {expr['number']} ({expr['meaning'].rstrip('.').lower()}) shows in how you meet the world, "
-                f"while your Soul Urge {soul['number']} reveals an inner pull toward {soul['meaning'].rstrip('.').lower()}. "
+                f"while your Soul Urge {soul['number']} reveals an inner pull toward {soul['meaning'].rstrip('.').lower()}."
+                f"{top_cell_line} "
                 f"This year carries the energy of a Personal Year {py['number']}: {py['meaning'].rstrip('.').lower()}. "
                 f"Lean into that theme — it's the current you're meant to move with right now."
             )
 
-        log_request("numerology", data=data, email=get_authenticated_email(),
-                    output=interpretation)
+        log_request("numerology", data=data, email=get_authenticated_email(), output=interpretation)
 
         return jsonify({
             "interpretation": interpretation,
             "profile": profile,
+            "birth_grid": {
+                "counts": grid['counts'],
+                "planes": grid['planes'],
+                "arrows": grid['arrows'],
+            },
         })
 
     except RateLimitError as e:
