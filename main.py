@@ -1858,8 +1858,9 @@ INSTRUCTIONS:
    — End with a 🧠 Simple takeaway.
 
 2. FOR ALL OTHER QUESTIONS:
-   — Answer directly in the very first line (verdict/timing). No preamble.
-   — Ground the answer in 1-2 relevant numbers (e.g. "In your Personal Year {profile['personal_year']['number']}...").
+   — Open by directly answering using language that echoes the actual words of their question — if they asked "should I take this job", open addressing "this job" or "this move" in your own words, not a generic opener. This makes the answer feel like it's actually responding to what they asked, not a template. No preamble before this.
+   — Ground the answer in whichever 1-2 numbers are GENUINELY most relevant to THIS question — Life Path, Expression, Soul Urge, and Personality are usually more relevant than Personal Year for most questions. Only bring up Personal Year when the question is specifically about timing, this year, or what's currently happening — never as a default filler. Do not mention Personal Year in every answer; most answers shouldn't touch it at all.
+   — CHECK THE EARLIER CONVERSATION ABOVE: if Personal Year has already been mentioned in any prior answer this session, do NOT mention it again here even if it feels relevant — treat it as already covered and lean on a different number instead. Personal Year gets used once per conversation, never more.
    — Be concise (4-6 sentences). Give a clear, decisive takeaway.
 
 3. TONE: Direct and concrete. NEVER use vague fluff ("trust the universe"). Every sentence must tie to a real number.
