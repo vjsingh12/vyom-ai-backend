@@ -248,3 +248,139 @@ def full_numerology_profile(full_name, dob, target_year=None):
         "lucky": lucky_profile(dob),
         "name_resonance": name_resonance(full_name, dob),
     }
+
+# ── BIRTH GRID (Psychomatrix / Arrows of Pythagoras) ───────────────────────
+# What each cell (1-9) represents. Grid layout is fixed:
+#   3 6 9   <- Mind plane
+#   2 5 8   <- Soul plane
+#   1 4 7   <- Body plane
+CELL_TRAITS = {
+    1: "will and character",
+    2: "energy",
+    3: "interest in learning",
+    4: "health",
+    5: "logic",
+    6: "work ethic",
+    7: "luck",
+    8: "duty and patience",
+    9: "memory",
+}
+
+GRID_PLANES = {
+    "mind": (3, 6, 9),
+    "soul": (2, 5, 8),
+    "body": (1, 4, 7),
+}
+
+# Named lines. Only rows and diagonals are included — these are the lines
+# with the most consistent naming/meaning across independent numerology
+# sources. Columns vary too much source-to-source to name with confidence.
+GRID_LINES = [
+    {
+        "cells": (3, 6, 9), "kind": "row", "plane": "mind",
+        "present": "Arrow of Intellect",
+        "present_desc": "Sharp, focused reasoning and a natural pull toward ideas.",
+        "missing": "Arrow of Poor Memory",
+        "missing_desc": "Memory and recall aren't reinforced by birth and benefit from deliberate practice.",
+    },
+    {
+        "cells": (2, 5, 8), "kind": "row", "plane": "soul",
+        "present": "Arrow of Emotional Balance",
+        "present_desc": "A settled emotional core paired with natural intuition.",
+        "missing": "Arrow of Hypersensitivity",
+        "missing_desc": "Emotional protection is thinner here, making outside energy easier to absorb.",
+    },
+    {
+        "cells": (1, 4, 7), "kind": "row", "plane": "body",
+        "present": "Arrow of Practicality",
+        "present_desc": "Grounded and action-oriented, comfortable turning plans into results.",
+        "missing": "Arrow of Hesitation",
+        "missing_desc": "Follow-through on action needs conscious building rather than coming naturally.",
+    },
+    {
+        "cells": (1, 5, 9), "kind": "diagonal",
+        "present": "Arrow of Determination",
+        "present_desc": "Strong inner drive; once a decision is made, it's rarely abandoned.",
+        "missing": "Arrow of Procrastination",
+        "missing_desc": "Motivation tends to need external structure or accountability to take hold.",
+    },
+    {
+        "cells": (3, 5, 7), "kind": "diagonal",
+        "present": "Arrow of Spirituality",
+        "present_desc": "Intuitive and reflective, at ease with life's uncertainties.",
+        "missing": "Arrow of the Enquirer",
+        "missing_desc": "A skeptical, evidence-first mind that questions before it trusts.",
+    },
+]
+
+
+def birth_grid(dob):
+    """
+    Computes the birth grid (a.k.a. Psychomatrix / Arrows of Pythagoras) from
+    the full date of birth. Uses the same _parse_dob() as the rest of this
+    module, so it accepts whatever date formats life_path_number() etc. do.
+
+    Returns:
+    {
+      "counts": {1: 2, 2: 1, ...},
+      "planes": {"mind": {"cells": {...}, "total": N}, "soul": {...}, "body": {...}},
+      "arrows": {"present": [...], "missing": [...]},
+      "cell_traits": CELL_TRAITS,
+    }
+    """
+    year, month, day = _parse_dob(dob)
+    raw = f"{day:02d}{month:02d}{year:04d}"
+    digits = [int(ch) for ch in raw if ch != "0"]
+    counts = {n: digits.count(n) for n in range(1, 10)}
+
+    planes_out = {}
+    for plane, cells in GRID_PLANES.items():
+        planes_out[plane] = {
+            "cells": {c: counts[c] for c in cells},
+            "total": sum(counts[c] for c in cells),
+        }
+
+    arrows_present, arrows_missing = [], []
+    for line in GRID_LINES:
+        vals = [counts[c] for c in line["cells"]]
+        if all(v > 0 for v in vals):
+            arrows_present.append({
+                "name": line["present"], "cells": line["cells"],
+                "description": line["present_desc"],
+            })
+        elif all(v == 0 for v in vals):
+            arrows_missing.append({
+                "name": line["missing"], "cells": line["cells"],
+                "description": line["missing_desc"],
+            })
+
+    return {
+        "counts": counts,
+        "planes": planes_out,
+        "arrows": {"present": arrows_present, "missing": arrows_missing},
+        "cell_traits": CELL_TRAITS,
+    }
+
+
+def birth_grid_summary_for_prompt(dob):
+    """Plain-text summary of the birth grid, for inserting into an AI prompt."""
+    data = birth_grid(dob)
+    lines = []
+
+    for n in range(1, 10):
+        count = data["counts"][n]
+        trait = CELL_TRAITS[n]
+        if count == 0:
+            lines.append(f"- {trait} (number {n}): absent from the birth grid")
+        else:
+            times = "time" if count == 1 else "times"
+            lines.append(f"- {trait} (number {n}): appears {count} {times}")
+
+    if data["arrows"]["present"]:
+        names = "; ".join(a["name"] for a in data["arrows"]["present"])
+        lines.append(f"Completed arrows: {names}")
+    if data["arrows"]["missing"]:
+        names = "; ".join(a["name"] for a in data["arrows"]["missing"])
+        lines.append(f"Missing arrows: {names}")
+
+    return "\n".join(lines)
