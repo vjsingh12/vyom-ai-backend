@@ -1698,21 +1698,19 @@ def get_numerology():
 
 {arrows_text}
 
-Write the reading in this shape (plain text, no markdown/headings/bullets, roughly 12-16 sentences across 4 short paragraphs):
+Write the reading in this shape (plain text, no markdown/headings/bullets, roughly 9-13 sentences across 3 short paragraphs):
 
 PARAGRAPH 1 — Open by addressing {first_name} by name. Draw out ONE genuinely interesting, specific insight about who they are, ideally one that CONNECTS their core numbers to their birth grid (e.g. does a completed arrow reinforce their Life Path, or does a quiet cell sit in tension with their Expression number?). If there's a real connection, lead with it — that's the most compelling thing you can say. If the systems don't obviously connect for this person, lead with the single most distinctive fact instead (a master number, an unusually strong/weak alignment, a completed or missing arrow). Make it feel like a small revelation, not generic.
 
 PARAGRAPH 2 — Give grounded, dynamic guidance across the LIFE SECTORS: love & relationships, career & work, health & wellbeing, and money & finances. Draw each from whichever numbers or grid cells are actually relevant to that sector (don't force every number into every sector). For the year ahead, use their Personal Year {py['number']} to colour the timing.
 
-PARAGRAPH 3 — Turn to the birth grid specifically: name the 2-3 strongest cells (highest counts) and any completed arrows by name, explaining what they add to the picture already painted. Then address the quietest cells (count 0) as growth areas to build deliberately, never as deficiencies, and name any missing arrows.
-
-PARAGRAPH 4 — End with a LIGHT touch (1-2 sentences) on how their name resonates with their core number, and — only if relevant — note gently that some people refine their name's spelling for closer harmony, to be explored only with a qualified numerologist, never alone. Do NOT suggest a specific spelling.
+PARAGRAPH 3 — Turn to the birth grid specifically: name the 2-3 strongest cells (highest counts) and any completed arrows by name, explaining what they add to the picture already painted. Then address the quietest cells (count 0) as growth areas to build deliberately, never as deficiencies, and name any missing arrows. Close the reading here — end on the grid, not on a new topic.
 
 GROUNDING RULE: every sentence describing a trait must name the specific number or cell/arrow it comes from (e.g. "Life Path 11", "Expression 8", "the arrow of determination", "memory, number 9"). A trait claim with nothing named is not acceptable — rewrite it so the source is explicit.
 
 NEVER use these phrases or close paraphrases of them: {banned_filler_text}.
 
-Do NOT mention astrology, planets, or charts — this is a pure numerology reading. Warm, humane, specific, and cohesive — it should read as ONE reading, not two topics stitched together."""
+STRICT SCOPE: do NOT discuss name resonance, the person's name number, or their name's spelling anywhere in this reading — that has its own dedicated section elsewhere on the page and covering it here would duplicate it. Do NOT mention astrology, planets, or charts — this is a pure numerology reading. Warm, humane, specific, and cohesive — it should read as ONE reading, not two topics stitched together."""
 
         interpretation = call_ai(prompt, temperature=0.8, max_tokens=1400)
         interpretation = (interpretation or "").strip()
