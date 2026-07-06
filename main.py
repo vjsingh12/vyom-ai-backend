@@ -1691,26 +1691,29 @@ def get_numerology():
 - Birthday {bday['number']} ({bday['meaning']}) — a special gift they carry.
 - Maturity {mat['number']} ({mat['meaning']}) — what they grow into later in life.
 - Personal Year (this year) {py['number']} ({py['meaning']}) — the theme of their year ahead.
-- Name resonance: their name number is {nres.get('name_number')} and their core life-path number is {nres.get('life_path_number')} — verdict: {nres.get('verdict')}.
 
-{first_name}'s birth grid (positions of digits from their date of birth):
+{first_name}'s birth grid (positions of digits from their date of birth) — a line of numbers that all appear in someone's birth date is called an "arrow", and it points to a natural strength; a line where none of the numbers appear points to something worth building deliberately:
 {cells_text}
 
 {arrows_text}
 
-Write the reading in this shape (plain text, no markdown/headings/bullets, roughly 9-13 sentences across 3 short paragraphs):
+Write the reading in this shape (plain text, no markdown/headings/bullets, roughly 10-14 sentences across 4 short paragraphs — one opening, then one each for career, relationships, and health & money combined):
 
-PARAGRAPH 1 — Open by addressing {first_name} by name. Draw out ONE genuinely interesting, specific insight about who they are, ideally one that CONNECTS their core numbers to their birth grid (e.g. does a completed arrow reinforce their Life Path, or does a quiet cell sit in tension with their Expression number?). If there's a real connection, lead with it — that's the most compelling thing you can say. If the systems don't obviously connect for this person, lead with the single most distinctive fact instead (a master number, an unusually strong/weak alignment, a completed or missing arrow). Make it feel like a small revelation, not generic.
+OPENING PARAGRAPH — Address {first_name} by name and give ONE genuinely interesting, specific insight about who they are as a whole person — ideally a real connection between their core numbers and their birth grid (e.g. a completed arrow reinforcing their Life Path). State the number or arrow that grounds this insight ONCE, clearly, then spend the rest of the paragraph actually describing what it means for how they move through the world — their temperament, their instincts, what makes them distinct. Do not restate the number again in this paragraph once it's been named.
 
-PARAGRAPH 2 — Give grounded, dynamic guidance across the LIFE SECTORS: love & relationships, career & work, health & wellbeing, and money & finances. Draw each from whichever numbers or grid cells are actually relevant to that sector (don't force every number into every sector). For the year ahead, use their Personal Year {py['number']} to colour the timing.
+CAREER PARAGRAPH — Real, specific guidance about work and ambition. Pick whichever number(s) or grid cells/arrows are genuinely most relevant to career (commonly Expression, Personality, an arrow touching will/logic/duty, or a quiet cell in health/work-ethic). Name each one ONCE by number, then devote the remaining sentences to rich, concrete description of how this actually plays out at work — the kind of environment they thrive in, how they're perceived by colleagues, what tends to trip them up, what this year's Personal Year {py['number']} means for career timing specifically.
 
-PARAGRAPH 3 — Turn to the birth grid specifically: name the 2-3 strongest cells (highest counts) and any completed arrows by name, explaining what they add to the picture already painted. Then address the quietest cells (count 0) as growth areas to build deliberately, never as deficiencies, and name any missing arrows. Close the reading here — end on the grid, not on a new topic.
+RELATIONSHIPS PARAGRAPH — Real, specific guidance about love, family, and connection. Pick whichever number(s) or grid cells are genuinely relevant (commonly Soul Urge, Personality, an arrow touching energy/emotional balance). Name each ONCE, then describe the actual relational pattern this produces — how they love, what they need from a partner, where friction tends to show up — in human, specific language.
 
-GROUNDING RULE: every sentence describing a trait must name the specific number or cell/arrow it comes from (e.g. "Life Path 11", "Expression 8", "the arrow of determination", "memory, number 9"). A trait claim with nothing named is not acceptable — rewrite it so the source is explicit.
+HEALTH & MONEY PARAGRAPH — Real guidance covering both physical wellbeing and financial matters, drawing from whichever numbers or grid cells are relevant to each (commonly Life Path or Maturity for health tendencies, Expression or a quiet/strong cell for money habits). Name each number ONCE, then give grounded, practical description of the actual pattern — not just "focus on your health" but what specifically this combination suggests about how they handle stress, energy, and money.
+
+CRITICAL — CITE EACH NUMBER ONLY ONCE: once you've named a number or arrow (e.g. "Life Path 11", "the arrow of determination"), do not repeat that same number again anywhere else in the reading. Refer back to it descriptively instead ("that same driven streak", "this pattern") rather than restating the digit. A reading dense with repeated digits reads like a printout, not a consultation — the numbers earn their place once, then the WRITING carries the insight.
+
+DO NOT give the birth grid its own separate paragraph or call it out as a distinct topic ("turning to your grid...", "your birth grid also shows..."). Fold grid facts invisibly into whichever paragraph they're actually relevant to, exactly the way you fold in the core numbers — the reader should never feel like two systems are being explained side by side.
 
 NEVER use these phrases or close paraphrases of them: {banned_filler_text}.
 
-STRICT SCOPE: do NOT discuss name resonance, the person's name number, or their name's spelling anywhere in this reading — that has its own dedicated section elsewhere on the page and covering it here would duplicate it. Do NOT mention astrology, planets, or charts — this is a pure numerology reading. Warm, humane, specific, and cohesive — it should read as ONE reading, not two topics stitched together."""
+STRICT SCOPE: do NOT discuss name resonance, the person's name number, or their name's spelling anywhere in this reading — that has its own dedicated section elsewhere on the page and covering it here would duplicate it. Do NOT mention astrology, planets, or charts — this is a pure numerology reading. Warm, humane, specific, and cohesive — it should read as ONE reading by one voice, not a list of facts."""
 
         interpretation = call_ai(prompt, temperature=0.8, max_tokens=1400)
         interpretation = (interpretation or "").strip()
