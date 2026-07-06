@@ -1772,12 +1772,35 @@ def numerology_ask():
         question = (data.get('question') or "").strip()
         fullname = (data.get('name') or "").strip()
         dob = (data.get('dob') or "").strip()
+        history = data.get('history') or []
 
         if not question or not fullname or not dob:
             return jsonify(error="Missing question, name or dob"), 400
 
         profile = numerology_engine.full_numerology_profile(fullname, dob)
         firstname = fullname.split()[0].capitalize() if fullname else "Seeker"
+
+        # Build prior conversation context so follow-up questions can refer
+        # back to earlier answers (e.g. "what about the same for my wife")
+        # without the person having to repeat themselves. Capped defensively
+        # even though the frontend also caps it, and each turn is truncated
+        # so a runaway history can't blow out the prompt.
+        history_block = ""
+        if isinstance(history, list) and history:
+            turns = []
+            for turn in history[-6:]:
+                if not isinstance(turn, dict):
+                    continue
+                h_q = str(turn.get('question', ''))[:300].strip()
+                h_a = str(turn.get('answer', ''))[:600].strip()
+                if h_q and h_a:
+                    turns.append(f"Q: {h_q}\nA: {h_a}")
+            if turns:
+                history_block = (
+                    "EARLIER IN THIS CONVERSATION (for context only — do not re-answer these, "
+                    "just use them to understand what the person is referring to if their new "
+                    "question builds on one):\n" + "\n\n".join(turns) + "\n"
+                )
 
         # Parse question for candidate names to breakdown
         candidates = []
@@ -1822,9 +1845,11 @@ def numerology_ask():
 
 {candidate_context}
 
+{history_block}
 Their question: {question}
 
 INSTRUCTIONS:
+0. USE THE EARLIER CONVERSATION ABOVE (if present) to understand references like "her", "that", "the same thing", or a name/topic mentioned in a prior answer. Resolve the reference silently and answer the new question directly — do not ask the person to repeat information they already gave.
 1. IF INVOLVING A NAME OR BRAND:
    — ALWAYS show the full letter-by-letter Pythagorean calculation using the exact data provided.
    — Compare the name number to their Life Path ({profile['life_path']['number']}).
