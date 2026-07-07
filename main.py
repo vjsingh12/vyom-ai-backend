@@ -1915,6 +1915,384 @@ STRICT SCOPE: do NOT discuss name resonance, the person's name number, or their 
         return jsonify({"error": str(e)}), 500
 
 
+# ── ANSWER PERMISSION GATE — main.py decides, the AI only explains ─────────
+# Core principle: numerology.py calculates numbers. main.py decides whether
+# a question CAN be answered, and what kind of answer is allowed. Gemini/Groq
+# is never asked to judge data sufficiency — it only ever explains an answer
+# type the backend has already permissioned.
+
+class AnswerType:
+    FULL_READING = "full_reading"
+    PARTIAL_READING = "partial_reading"
+    MISSING_DATA = "missing_data_response"
+    SAFETY_RESPONSE = "safety_response"
+    UNSUPPORTED = "unsupported_response"
+    CLARIFICATION_REQUIRED = "clarification_required"
+
+
+QUESTION_TYPES = [
+    "numerology_self", "numerology_name_resonance", "numerology_compatibility",
+    "brand_name_resonance", "business_name_resonance", "child_name_resonance",
+    "career_general", "career_timing", "money_general", "money_timing",
+    "relationship_general", "partner_compatibility", "marriage_timing",
+    "health_sensitive", "pregnancy_sensitive", "death_sensitive",
+    "remedy_request", "general_life_guidance", "unsupported_or_unclear",
+]
+
+# Deterministic keyword classification — no LLM call. Order matters: more
+# specific/sensitive categories are checked first so they can't be shadowed
+# by a broader keyword match later in the list.
+_QUESTION_TYPE_PATTERNS = [
+    ("death_sensitive", re.compile(r'(?i)\b(when will i die|how (?:will|do) i die|my death|lifespan)\b')),
+    ("pregnancy_sensitive", re.compile(r'(?i)\b(pregnan|conceive|having a baby|fertility)\b')),
+    ("health_sensitive", re.compile(r'(?i)\b(illness|disease|health|sick|diagnos|surgery|symptom)\b')),
+    ("marriage_timing", re.compile(r'(?i)\b(when will i (?:get married|marry)|marriage.*when|when.*marriage)\b')),
+    ("partner_compatibility", re.compile(r'(?i)\b(wife|husband|spouse|partner|girlfriend|boyfriend|fianc[ée]e?)\b.*\b(resonate|compatib|match|suit|right for me|connection)\b')),
+    ("child_name_resonance", re.compile(r'(?i)\b(child|baby|son|daughter)\b.*\bname\b')),
+    ("business_name_resonance", re.compile(r'(?i)\b(business name|company name)\b')),
+    ("brand_name_resonance", re.compile(r'(?i)\bbrand\b')),
+    ("numerology_compatibility", re.compile(r'(?i)\b(resonate|compatib|match(?:es)?)\b')),
+    ("career_timing", re.compile(r'(?i)\bcareer\b.*\b(when|timing|this year|next year)\b')),
+    ("career_general", re.compile(r'(?i)\b(career|job|profession|promotion)\b')),
+    ("money_timing", re.compile(r'(?i)\b(money|rich|wealth|financ)\b.*\b(when|timing|this year|next year)\b')),
+    ("money_general", re.compile(r'(?i)\b(money|rich|wealth|financ|invest|business)\b')),
+    ("remedy_request", re.compile(r'(?i)\b(remedy|remedies|what should i do to fix|how (?:can|do) i improve)\b')),
+    ("relationship_general", re.compile(r'(?i)\b(relationship|love life|dating)\b')),
+    ("numerology_name_resonance", re.compile(r'(?i)\bname\b.*\b(resonate|suit|match)\b')),
+]
+
+
+def classify_numerology_question(question):
+    for qtype, pattern in _QUESTION_TYPE_PATTERNS:
+        if pattern.search(question):
+            return qtype
+    return "general_life_guidance"
+
+
+_QUESTION_STOPWORDS = {
+    "does", "is", "are", "was", "were", "will", "would", "should", "can",
+    "could", "do", "did", "what", "when", "why", "how", "who", "which",
+    "the", "this", "that", "these", "those", "my", "your", "his", "her",
+    "their", "our", "and", "but", "or", "if", "so",
+}
+
+
+def _extract_target_name(question, fullname):
+    """Reuses the existing candidate-name regex to find a real name typed
+    into the question itself (e.g. 'my wife Simran')."""
+    # NOTE: (?i) scoped to only the keyword alternation — applying it to the
+    # whole pattern would make [A-Z] match lowercase too (Python regex
+    # character classes are affected by inline case-insensitive flags),
+    # which silently broke this: "business name good" would otherwise
+    # capture "name good" as if it were a proper noun.
+    candidates = re.findall(
+        r'(?i:name|named|called|page|brand|business|handle|title|wife|husband|partner|'
+        r'son|daughter|friend)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})',
+        question
+    )
+    for c in candidates:
+        c = c.strip()
+        if c.lower() != fullname.lower() and numerology_engine.has_usable_name(c):
+            return c
+    # Also catch a bare capitalised name/phrase anywhere in the question
+    # (e.g. "Is Divine Compass a good brand name for me?"). Sentence-initial
+    # capitalization ("Does", "Is", "What") is grammar, not a name signal —
+    # strip any leading stopword(s) from a candidate rather than discarding
+    # the whole match, so "Does Simran Kaur" still yields "Simran Kaur".
+    bare = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\b', question)
+    for c in bare:
+        words = c.split()
+        while words and words[0].lower() in _QUESTION_STOPWORDS:
+            words.pop(0)
+        cleaned = " ".join(words)
+        if not cleaned:
+            continue
+        if cleaned.lower() != fullname.lower() and numerology_engine.has_usable_name(cleaned):
+            return cleaned
+    return None
+
+
+def build_answer_permission_gate(question, data, profile):
+    """
+    THE gate. Runs entirely in Python before any AI call. Decides:
+    - what kind of question this is
+    - whether it CAN be answered, partially or fully
+    - what's missing
+    - what claims are forbidden in the eventual answer
+    """
+    fullname = data.get('name', '')
+    question_type = classify_numerology_question(question)
+
+    target_name = _extract_target_name(question, fullname)
+    target_profile = None
+    if target_name:
+        target_profile = numerology_engine.partial_profile_from_available_data(name=target_name)
+
+    forbidden_claims = [
+        "positive/negative/neutral compatibility verdict without both people's data",
+        '"resonates" without both sides calculated', '"strong match"', '"weak match"',
+        '"the energy feels"',
+    ]
+
+    # ── Sensitive/safety categories — always a safety response, never AI-judged
+    if question_type in ("health_sensitive", "pregnancy_sensitive", "death_sensitive"):
+        return {
+            "question_type": question_type,
+            "answer_type": AnswerType.SAFETY_RESPONSE,
+            "can_answer_fully": False,
+            "missing_data": [],
+            "forbidden_claims": ["diagnosis", "illness prediction", "pregnancy certainty", "death prediction"],
+            "target_name": target_name,
+            "target_profile": target_profile,
+        }
+
+    # ── Two-person comparison categories — need target data
+    if question_type in ("partner_compatibility", "numerology_compatibility",
+                          "child_name_resonance", "numerology_name_resonance"):
+        if not target_profile or not target_profile["numbers"]:
+            return {
+                "question_type": question_type,
+                "answer_type": AnswerType.MISSING_DATA,
+                "can_answer_fully": False,
+                "missing_data": ["target_name_or_dob"],
+                "forbidden_claims": forbidden_claims,
+                "target_name": target_name,
+                "target_profile": target_profile,
+            }
+        comparison = numerology_engine.compare_numerology_profiles(profile, target_profile)
+        answer_type = AnswerType.FULL_READING if not target_profile["missing_fields"] else AnswerType.PARTIAL_READING
+        return {
+            "question_type": question_type,
+            "answer_type": answer_type,
+            "can_answer_fully": not target_profile["missing_fields"],
+            "missing_data": target_profile["missing_fields"],
+            "forbidden_claims": forbidden_claims if target_profile["missing_fields"] else [],
+            "target_name": target_name,
+            "target_profile": target_profile,
+            "comparison": comparison,
+        }
+
+    # ── Brand/business name resonance — needs a target name
+    if question_type in ("brand_name_resonance", "business_name_resonance"):
+        if not target_name:
+            return {
+                "question_type": question_type,
+                "answer_type": AnswerType.MISSING_DATA,
+                "can_answer_fully": False,
+                "missing_data": ["target_name"],
+                "forbidden_claims": forbidden_claims,
+                "target_name": None,
+                "target_profile": None,
+            }
+        name_comparison = numerology_engine.compare_name_to_user_profile(
+            target_name, profile, purpose=question_type.replace("_name_resonance", "")
+        )
+        return {
+            "question_type": question_type,
+            "answer_type": AnswerType.FULL_READING,
+            "can_answer_fully": True,
+            "missing_data": [],
+            "forbidden_claims": [],
+            "target_name": target_name,
+            "target_profile": None,
+            "name_comparison": name_comparison,
+        }
+
+    # ── Timing categories — allowed, but capped confidence, no exact dates
+    if question_type in ("marriage_timing", "career_timing", "money_timing"):
+        return {
+            "question_type": question_type,
+            "answer_type": AnswerType.FULL_READING,
+            "can_answer_fully": True,
+            "missing_data": [],
+            "forbidden_claims": ["exact guaranteed date", "fixed certainty"],
+            "target_name": None, "target_profile": None,
+        }
+
+    # ── Money/career/general — normally fully answerable from the user's own profile
+    money_career_claims = []
+    if question_type == "money_general":
+        money_career_claims = ["guaranteed wealth", "specific investment instruction"]
+    elif question_type == "career_general":
+        money_career_claims = ["guaranteed job/promotion", "command to quit current job"]
+
+    return {
+        "question_type": question_type,
+        "answer_type": AnswerType.FULL_READING,
+        "can_answer_fully": True,
+        "missing_data": [],
+        "forbidden_claims": money_career_claims,
+        "target_name": None, "target_profile": None,
+    }
+
+
+def build_missing_data_response(gate, profile, firstname):
+    """
+    Deterministic, Python-only response — NO AI call. Used whenever the gate
+    decides required data is missing. Still gives real value from the user's
+    OWN available numbers, phrased naturally, never inventing the missing side.
+    """
+    lp = profile["life_path"]
+    expr = profile["expression"]
+
+    if gate["question_type"] in ("brand_name_resonance", "business_name_resonance"):
+        ask = "Share the exact name and I'll calculate it against your profile."
+    else:
+        ask = "Share their name (or date of birth) and I'll work out exactly how it lines up with your numbers."
+
+    answer = (
+        f"I can't judge that yet — I need more to go on. From your side, your Life Path "
+        f"{lp['number']} ({lp['meaning'].rstrip('.').lower()}) and Expression {expr['number']} "
+        f"({expr['meaning'].rstrip('.').lower()}) shape a lot of what you bring to this. {ask}"
+    )
+    return {
+        "answer": answer,
+        "answer_type": gate["answer_type"],
+        "question_type": gate["question_type"],
+        "used_ai": False,
+    }
+
+
+_SAFETY_TEMPLATES = {
+    "health_sensitive": (
+        "Numerology and astrology aren't able to diagnose or predict illness, so I won't guess "
+        "at your health here. What your numbers CAN speak to is energy and stress tendencies in "
+        "a general sense — but for anything about your actual health, please speak to a qualified "
+        "medical professional."
+    ),
+    "pregnancy_sensitive": (
+        "I can't responsibly predict or guarantee anything about pregnancy or fertility — that's "
+        "outside what numerology can honestly speak to, and it's a conversation for you and a "
+        "qualified medical professional, not a number."
+    ),
+    "death_sensitive": (
+        "I don't give predictions about death or lifespan — that's not something numerology or "
+        "astrology can honestly claim to know, and I won't pretend otherwise."
+    ),
+}
+
+
+def build_safety_response(gate, firstname):
+    """Deterministic, Python-only response for sensitive categories — NO AI call."""
+    template = _SAFETY_TEMPLATES.get(gate["question_type"], _SAFETY_TEMPLATES["health_sensitive"])
+    return {
+        "answer": template,
+        "answer_type": AnswerType.SAFETY_RESPONSE,
+        "question_type": gate["question_type"],
+        "used_ai": False,
+    }
+
+
+def select_relevant_numerology_factors(gate, profile):
+    """Pick only the numbers actually relevant to this question type, instead
+    of dumping the entire profile into every prompt."""
+    base = {
+        "life_path": profile["life_path"]["number"],
+        "expression": profile["expression"]["number"],
+    }
+    qt = gate["question_type"]
+    if qt in ("relationship_general", "partner_compatibility", "marriage_timing"):
+        base["soul_urge"] = profile["soul_urge"]["number"]
+        base["personality"] = profile["personality"]["number"]
+    if qt in ("career_general", "career_timing", "money_general", "money_timing"):
+        base["personal_year"] = profile["personal_year"]["number"]
+    if qt in ("marriage_timing", "career_timing", "money_timing"):
+        base["personal_year"] = profile["personal_year"]["number"]
+    return base
+
+
+def build_numerology_prompt(question, profile, gate, selected_factors, firstname, history_block):
+    """
+    Structured prompt — "COMMIT TO A STANCE" only applies when can_answer_fully
+    is true and the category isn't sensitive. Partial/missing cases never
+    reach this function at all (the gate returns a deterministic response
+    for those before any AI call).
+    """
+    factors_text = "\n".join(f"- {k}: {v}" for k, v in selected_factors.items())
+    forbidden_text = "; ".join(gate["forbidden_claims"]) if gate["forbidden_claims"] else "none beyond the standard safety rules"
+
+    extra_context = ""
+    if gate.get("comparison") and gate["comparison"].get("can_compare"):
+        comp = gate["comparison"]
+        pairs_text = "\n".join(
+            f"  - {p['area']}: user {p['user_number']} vs target {p['target_number']} → {p['verdict']}"
+            for p in comp["pairs"]
+        )
+        extra_context = f"\nCALCULATED TWO-PERSON COMPARISON (use this, do not recalculate):\nOverall: {comp['overall_verdict']}\n{pairs_text}\n"
+    if gate.get("name_comparison") and gate["name_comparison"].get("can_compare"):
+        nc = gate["name_comparison"]
+        extra_context = (
+            f"\nCALCULATED NAME COMPARISON (use this, do not recalculate):\n"
+            f"Target name: {nc['target_name']} → number {nc['target_name_number']}\n"
+            f"Verdict vs your Life Path {nc['user_life_path']}: {nc['verdict']} — {nc['meaning']}\n"
+        )
+
+    commit_instruction = (
+        "COMMIT TO A STANCE: give ONE clear answer, not a menu of possibilities. State it with confidence."
+        if gate["can_answer_fully"] and gate["question_type"] not in ("health_sensitive", "pregnancy_sensitive", "death_sensitive")
+        else "Do NOT commit to a firm verdict beyond what the calculated data above actually supports — stay honest about the limits of a PARTIAL reading."
+    )
+
+    return f"""You are Vayuman, a plain-English numerology guide.
+
+Use ONLY the structured data below — never invent a number or claim data you don't have.
+
+QUESTION:
+{question}
+
+QUESTION TYPE: {gate['question_type']}
+ANSWER TYPE: {gate['answer_type']}
+CAN ANSWER FULLY: {gate['can_answer_fully']}
+MISSING DATA: {gate['missing_data'] or 'none'}
+
+SELECTED FACTORS (only these — do not reference any other number):
+{factors_text}
+{extra_context}
+{history_block}
+
+FORBIDDEN CLAIMS — never say or imply any of: {forbidden_text}
+NEVER SAY: "you will definitely marry this person", "your partner is cheating", "you will become rich", "you should leave your job", "you will get pregnant", "you are cursed", "your chart guarantees X", "you will die/get sick".
+
+RULES:
+- Do not invent numbers or mention data not present above.
+- Do not give a verdict beyond what ANSWER TYPE allows.
+- Do not use vague spiritual filler ("cosmic shift", "divine alignment", "trust the process", "your journey").
+- Explain every numerology term simply, in the same sentence you use it.
+- Open by echoing the actual words of the question, not a generic opener.
+- Never restate the question rhetorically or repeat the same point twice to pad length.
+- {commit_instruction}
+- Keep it concise: 4-6 sentences.
+- If Personal Year has already been mentioned earlier in this conversation, don't repeat it — use a different number.
+
+Write the answer now — plain text, no preamble, no headers unless factors include a real name comparison worth showing step-by-step.
+"""
+
+
+def post_check_answer(answer, gate):
+    """
+    Deterministic post-check. If the AI still violated the gate's rules
+    despite the prompt (e.g. gave a verdict on a partial reading, or used a
+    banned phrase), replace with a safe fallback rather than show it.
+    """
+    text = (answer or "")
+    lower = text.lower()
+
+    if gate["answer_type"] == AnswerType.PARTIAL_READING:
+        if re.search(r'(?i)\b(resonates?|compatible|strong match|weak match|the energy feels)\b', text):
+            return False, "partial reading gave a full verdict it wasn't allowed to give"
+
+    if re.search(r'(?i)(not calculated|not provided|we\'?d need|let\'?s assume)', text):
+        return False, "used a banned 'missing data' phrase instead of the gate's own wording"
+
+    banned_filler = ["great potential", "the universe has a plan", "trust the process",
+                      "your journey", "cosmic shift", "divine alignment", "you are destined"]
+    for phrase in banned_filler:
+        if phrase in lower:
+            return False, f"used banned filler phrase: {phrase}"
+
+    return True, None
+
+
 @app.route('/numerology-ask', methods=['POST'])
 def numerology_ask():
     try:
@@ -1931,10 +2309,7 @@ def numerology_ask():
         firstname = fullname.split()[0].capitalize() if fullname else "Seeker"
 
         # Build prior conversation context so follow-up questions can refer
-        # back to earlier answers (e.g. "what about the same for my wife")
-        # without the person having to repeat themselves. Capped defensively
-        # even though the frontend also caps it, and each turn is truncated
-        # so a runaway history can't blow out the prompt.
+        # back to earlier answers without the person repeating themselves.
         history_block = ""
         if isinstance(history, list) and history:
             turns = []
@@ -1952,115 +2327,50 @@ def numerology_ask():
                     "question builds on one):\n" + "\n\n".join(turns) + "\n"
                 )
 
-        # Parse question for candidate names to breakdown
-        candidates = []
-        for m in re.findall(r'(?i)(?:name|named|called|page|brand|business|handle|title)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})', question):
-            candidates.append(m.strip())
+        # ── THE GATE — decides everything before any AI call ────────────────
+        gate = build_answer_permission_gate(question, data, profile)
 
-        seen = set()
-        cleaned = []
-        for c in candidates:
-            if c.lower() != fullname.lower() and c.lower() not in seen and len(c) > 2:
-                seen.add(c.lower())
-                cleaned.append(c)
+        if gate["answer_type"] == AnswerType.MISSING_DATA:
+            response = build_missing_data_response(gate, profile, firstname)
+            log_request("numerology_ask", data=data, email=get_authenticated_email(),
+                        question=question, output=response["answer"])
+            return jsonify(response)
 
-        # Build the step-by-step mathematical breakdown for the AI
-        candidate_blocks = []
-        if cleaned:
-            candidate_blocks.append("CALCULATED NAME BREAKDOWNS (Use these exact numbers, show your working!):")
-            for c in cleaned[:3]:
-                try:
-                    brk = numerology_engine.name_number_breakdown(c)
-                    lines = [f"Name: {c.upper()}"]
-                    for w in brk['words']:
-                        lines.append(f"{w['word']}")
-                        for l in w['letters']:
-                            lines.append(f"  {l['letter']} = {l['value']}")
-                        lines.append(f"Word Total = {w['total']} → reduced = {w['reduced']}")
-                    lines.append(f"Full Name Total: {brk['full_total']} → Final Name Number = {brk['full_reduced']}")
-                    candidate_blocks.append("\n".join(lines))
-                except Exception: pass
+        if gate["answer_type"] == AnswerType.SAFETY_RESPONSE:
+            response = build_safety_response(gate, firstname)
+            log_request("numerology_ask", data=data, email=get_authenticated_email(),
+                        question=question, output=response["answer"])
+            return jsonify(response)
 
-        candidate_context = "\n\n".join(candidate_blocks)
-
-        # Stage A — shared deterministic sufficiency gate (same one used by
-        # ask_vyom), plus health/timing flags for consistent handling.
-        gate = check_sufficiency(question, has_named_target=bool(cleaned))
-
-        health_instruction = ""
-        if gate["touches_health"]:
-            health_instruction = (
-                "\nHEALTH QUESTION DETECTED: do not diagnose, predict, or name any illness. "
-                "You may speak generally about energy/vitality tendencies from the numbers, but "
-                "explicitly note that for anything medical, a qualified professional should be "
-                "consulted.\n"
-            )
-
-        if cleaned:
-            name_instruction = """1. A NAME WAS CALCULATED — use it:
-   — ALWAYS show the full letter-by-letter Pythagorean calculation using the exact data provided above.
-   — Compare the name number to their Life Path ({lp}).
-   — Give a clear VERDICT (strong, neutral, tension) and explain what that energy feels like.
-   — Use formatting (emoji headers like 🔢 Calculation, ⚖️ Verdict).
-   — End with a 🧠 Simple takeaway.""".format(lp=profile['life_path']['number'])
-        elif gate["insufficient"]:
-            name_instruction = """1. THE QUESTION MENTIONS SOMEONE OR SOMETHING BY RELATION, NOT BY NAME (e.g. "my wife", "my brand") — no calculation is possible yet:
-   — Do NOT use the calculation-template formatting (no 🔢/⚖️/🧠 headers) — there is nothing calculated to show, so that structure would be empty theater.
-   — Do NOT say the connection "resonates", is "compatible", or "neutral" — no verdict of any kind about the other person or the pairing.
-   — Still give a genuinely useful answer using {firstname}'s own numbers where relevant (e.g. what their Life Path or Expression suggests they value or are drawn to in this kind of connection).
-   — End with ONE direct, warm sentence asking for the actual name, so Vayuman can calculate the exact resonance next time — phrased naturally, like "Tell me her name and I'll work out exactly how it lines up with your {lp}." Do not dwell on the limitation beyond this one sentence.""".format(firstname=firstname, lp=f"Life Path {profile['life_path']['number']}")
-        else:
-            name_instruction = "1. This question is not about a specific name or brand — skip straight to instruction 2 below."
-
-        prompt = f"""You are Vayuman — an elite, precision-focused numerology guide.
-{firstname} has asked you a question. Answer it using ONLY their Pythagorean numerology numbers below.
-
-{firstname}'s core numbers:
-- Life Path: {profile['life_path']['number']}
-- Expression: {profile['expression']['number']}
-- Soul Urge: {profile['soul_urge']['number']}
-- Personality: {profile['personality']['number']}
-- Personal Year: {profile['personal_year']['number']}
-
-{candidate_context}
-{health_instruction}
-{history_block}
-Their question: {question}
-
-INSTRUCTIONS:
-0. USE THE EARLIER CONVERSATION ABOVE (if present) to understand references like "her", "that", "the same thing", or a name/topic mentioned in a prior answer. Resolve the reference silently and answer the new question directly — do not ask the person to repeat information they already gave.
-{name_instruction}
-
-2. FOR ALL OTHER QUESTIONS (or once instruction 1 above is handled):
-   — Open by directly answering using language that echoes the actual words of their question — if they asked "should I take this job", open addressing "this job" or "this move" in your own words, not a generic opener. This makes the answer feel like it's actually responding to what they asked, not a template. No preamble before this.
-   — COMMIT TO A STANCE: give ONE clear answer, not a menu of possibilities. Do not hedge with multiple "maybe" or "it could go either way" qualifiers stacked in the same answer — pick the most number-grounded read and state it with confidence, then note the one real caveat if there is one.
-   — NEVER GO IN CIRCLES: do not restate the question back rhetorically ("You're asking whether..."), do not repeat the same point in different words to pad length, and do not end by summarizing what you already just said. Every sentence must add new information.
-   — Ground the answer in whichever 1-2 numbers are GENUINELY most relevant to THIS question — Life Path, Expression, Soul Urge, and Personality are usually more relevant than Personal Year for most questions. Only bring up Personal Year when the question is specifically about timing, this year, or what's currently happening — never as a default filler. Do not mention Personal Year in every answer; most answers shouldn't touch it at all.
-   — CHECK THE EARLIER CONVERSATION ABOVE: if Personal Year has already been mentioned in any prior answer this session, do NOT mention it again here even if it feels relevant — treat it as already covered and lean on a different number instead. Personal Year gets used once per conversation, never more.
-   — Be concise (4-6 sentences). Give a clear, decisive takeaway.
-
-3. CRITICAL — NEVER say a number or calculation is "not calculated", "not provided", "we'd need", "let's assume", or any close paraphrase implying missing data. If genuinely nothing can be calculated (see instruction 1), ask for the missing name in the ONE natural sentence described above and move on — do not repeat or dwell on the limitation anywhere else in the answer.
-
-4. TONE: Direct and concrete. NEVER use these phrases or close paraphrases of them: "great potential", "amazing things", "the universe has a plan", "your journey", "trust the process", "everything happens for a reason", "you are destined", "special and unique", "align with the universe", "positive energy", "the stars have blessed you". Every sentence must tie to a real number.
-"""
-        answer = call_ai(prompt, temperature=0.65, max_tokens=1200)
+        # ── Only FULL_READING / PARTIAL_READING reach the AI ─────────────────
+        selected_factors = select_relevant_numerology_factors(gate, profile)
+        prompt = build_numerology_prompt(question, profile, gate, selected_factors, firstname, history_block)
+        answer = call_ai(prompt, temperature=0.6 if gate["can_answer_fully"] else 0.4, max_tokens=1200)
         answer = answer.strip()
 
-        # Stage C — deterministic post-check. Catches the exact failure mode
-        # from the wife-number example: a verdict invented over missing data.
-        if violates_sufficiency_contract(answer, gate):
-            print(f"[numerology_ask] sufficiency contract violated, using fallback for question: {question[:80]}")
-            answer = (
-                f"I can compare their numbers with yours, but I need their name or date of birth "
-                f"first. From your side, your Life Path {profile['life_path']['number']} "
-                f"({profile['life_path']['meaning'].rstrip('.').lower()}) and Expression "
-                f"{profile['expression']['number']} shape a lot of what you look for in this kind "
-                f"of connection. Share their name and I'll work out exactly how it lines up with "
-                f"your numbers."
-            )
+        ok, violation_reason = post_check_answer(answer, gate)
+        if not ok:
+            print(f"[numerology_ask] post-check failed ({violation_reason}) for question: {question[:80]}")
+            if gate["answer_type"] == AnswerType.PARTIAL_READING:
+                fallback = build_missing_data_response(gate, profile, firstname)
+                answer = fallback["answer"]
+            else:
+                answer = (
+                    f"Your Life Path {profile['life_path']['number']} and Expression "
+                    f"{profile['expression']['number']} are the clearest signal here — "
+                    f"{profile['life_path']['meaning'].rstrip('.').lower()} Try asking again "
+                    f"with a bit more detail and I'll go deeper."
+                )
 
-        log_request("numerology_ask", data=data, email=get_authenticated_email(), question=question, output=answer)
-        return jsonify(answer=answer)
+        response = {
+            "answer": answer,
+            "answer_type": gate["answer_type"],
+            "question_type": gate["question_type"],
+            "used_ai": True,
+        }
+        log_request("numerology_ask", data=data, email=get_authenticated_email(),
+                    question=question, output=answer)
+        return jsonify(response)
 
     except RateLimitError as e:
         return jsonify(error=str(e), rate_limited=True), 429
