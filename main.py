@@ -165,6 +165,21 @@ def init_db():
                 rating INTEGER
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS pending_contexts (
+                id SERIAL PRIMARY KEY,
+                email TEXT,
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                status TEXT,
+                question_type TEXT,
+                original_question TEXT,
+                target_relation TEXT,
+                needed_fields TEXT,
+                resume_action TEXT,
+                context_json TEXT
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -234,6 +249,21 @@ def init_db():
                 rating INTEGER
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS pending_contexts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT,
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                status TEXT,
+                question_type TEXT,
+                original_question TEXT,
+                target_relation TEXT,
+                needed_fields TEXT,
+                resume_action TEXT,
+                context_json TEXT
+            )
+        """)
     db.commit()
     db.close()
 
@@ -268,6 +298,68 @@ def log_request(kind, data=None, email=None, question=None, output=None):
         db.close()
     except Exception as e:
         print(f"[log_request] failed: {e}")
+
+
+PENDING_CONTEXT_EXPIRY_MINUTES = 45
+
+
+def save_pending_context(email, pending_context):
+    """
+    Best-effort persistence of a pending context for a SIGNED-IN user, so it
+    survives across devices/sessions. Anonymous users rely entirely on the
+    frontend (sessionStorage) — this is a bonus, never a requirement, and
+    must never break the main request if it fails.
+    """
+    if not email or not pending_context:
+        return
+    try:
+        from datetime import timedelta
+        now = datetime.utcnow()
+        expires_at = (now + timedelta(minutes=PENDING_CONTEXT_EXPIRY_MINUTES)).isoformat()
+        db = get_db()
+        db.execute(
+            "INSERT INTO pending_contexts (email, created_at, expires_at, status, question_type, "
+            "original_question, target_relation, needed_fields, resume_action, context_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                email, now.isoformat(), expires_at,
+                pending_context.get("status"),
+                pending_context.get("question_type"),
+                pending_context.get("original_question"),
+                pending_context.get("target_relation"),
+                json.dumps(pending_context.get("needed_fields") or []),
+                pending_context.get("resume_action"),
+                json.dumps(pending_context),
+            )
+        )
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"[save_pending_context] failed: {e}")
+
+
+def load_pending_context(email):
+    """Returns the most recent NON-EXPIRED pending context for this email,
+    or None. Best-effort — anonymous users always get None here (the
+    frontend is their source of truth instead)."""
+    if not email:
+        return None
+    try:
+        db = get_db()
+        row = db.execute(
+            "SELECT context_json, expires_at FROM pending_contexts WHERE email = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (email,)
+        ).fetchone()
+        db.close()
+        if not row:
+            return None
+        if row.get("expires_at") and row["expires_at"] < datetime.utcnow().isoformat():
+            return None  # expired
+        return json.loads(row["context_json"])
+    except Exception as e:
+        print(f"[load_pending_context] failed: {e}")
+        return None
 
 
 @app.route('/cleanup', methods=['GET', 'POST'])
@@ -1948,7 +2040,7 @@ _QUESTION_TYPE_PATTERNS = [
     ("health_sensitive", re.compile(r'(?i)\b(illness|disease|health|sick|diagnos|surgery|symptom)\b')),
     ("marriage_timing", re.compile(r'(?i)\b(when will i (?:get married|marry)|marriage.*when|when.*marriage)\b')),
     ("partner_compatibility", re.compile(r'(?i)\b(wife|husband|spouse|partner|girlfriend|boyfriend|fianc[ée]e?)\b.*\b(resonate|compatib|match|suit|right for me|connection)\b')),
-    ("child_name_resonance", re.compile(r'(?i)\b(child|baby|son|daughter)\b.*\bname\b')),
+    ("child_name_resonance", re.compile(r'(?i)\b(?:(?:child|baby|son|daughter)\b.*\bname\b|name\b.*\b(?:child|baby|son|daughter))\b')),
     ("business_name_resonance", re.compile(r'(?i)\b(business name|company name)\b')),
     ("brand_name_resonance", re.compile(r'(?i)\bbrand\b')),
     ("numerology_compatibility", re.compile(r'(?i)\b(resonate|compatib|match(?:es)?)\b')),
@@ -2012,6 +2104,22 @@ def _extract_target_name(question, fullname):
     return None
 
 
+def _target_relation_label(question, question_type):
+    """Best-effort human label for the pending_context — 'wife', 'brand', etc."""
+    m = SECOND_PERSON_PATTERN.search(question) if 'SECOND_PERSON_PATTERN' in globals() else None
+    if m:
+        word = m.group(1).lower()
+        if word not in ("him", "her", "them", "someone", "person"):
+            return word
+    if question_type in ("brand_name_resonance",):
+        return "brand"
+    if question_type in ("business_name_resonance",):
+        return "business"
+    if question_type in ("child_name_resonance",):
+        return "child"
+    return "target"
+
+
 def build_answer_permission_gate(question, data, profile):
     """
     THE gate. Runs entirely in Python before any AI call. Decides:
@@ -2058,6 +2166,14 @@ def build_answer_permission_gate(question, data, profile):
                 "forbidden_claims": forbidden_claims,
                 "target_name": target_name,
                 "target_profile": target_profile,
+                "pending_context": {
+                    "status": "awaiting_target_data",
+                    "original_question": question,
+                    "target_relation": _target_relation_label(question, question_type),
+                    "needed_fields": ["target_name_or_dob"],
+                    "resume_action": "compare_target_with_user",
+                    "question_type": question_type,
+                },
             }
         comparison = numerology_engine.compare_numerology_profiles(profile, target_profile)
         answer_type = AnswerType.FULL_READING if not target_profile["missing_fields"] else AnswerType.PARTIAL_READING
@@ -2083,6 +2199,14 @@ def build_answer_permission_gate(question, data, profile):
                 "forbidden_claims": forbidden_claims,
                 "target_name": None,
                 "target_profile": None,
+                "pending_context": {
+                    "status": "awaiting_target_data",
+                    "original_question": question,
+                    "target_relation": _target_relation_label(question, question_type),
+                    "needed_fields": ["target_name"],
+                    "resume_action": "compare_target_with_user",
+                    "question_type": question_type,
+                },
             }
         name_comparison = numerology_engine.compare_name_to_user_profile(
             target_name, profile, purpose=question_type.replace("_name_resonance", "")
@@ -2126,6 +2250,23 @@ def build_answer_permission_gate(question, data, profile):
     }
 
 
+def _unified_response(answer, answer_type, question_type, used_ai, can_answer_fully,
+                       missing_data=None, pending_context=None, resume_context_used=False):
+    """Every Ask Vayuman (numerology) response goes through this shape,
+    matching the API contract exactly — no endpoint returns a partial shape."""
+    return {
+        "answer": answer,
+        "answer_type": answer_type,
+        "question_type": question_type,
+        "used_ai": used_ai,
+        "can_answer_fully": can_answer_fully,
+        "can_answer_partially": answer_type == AnswerType.PARTIAL_READING,
+        "missing_data": missing_data or [],
+        "pending_context": pending_context,
+        "resume_context_used": resume_context_used,
+    }
+
+
 def build_missing_data_response(gate, profile, firstname):
     """
     Deterministic, Python-only response — NO AI call. Used whenever the gate
@@ -2145,12 +2286,15 @@ def build_missing_data_response(gate, profile, firstname):
         f"{lp['number']} ({lp['meaning'].rstrip('.').lower()}) and Expression {expr['number']} "
         f"({expr['meaning'].rstrip('.').lower()}) shape a lot of what you bring to this. {ask}"
     )
-    return {
-        "answer": answer,
-        "answer_type": gate["answer_type"],
-        "question_type": gate["question_type"],
-        "used_ai": False,
-    }
+    return _unified_response(
+        answer=answer,
+        answer_type=gate["answer_type"],
+        question_type=gate["question_type"],
+        used_ai=False,
+        can_answer_fully=False,
+        missing_data=gate.get("missing_data", []),
+        pending_context=gate.get("pending_context"),
+    )
 
 
 _SAFETY_TEMPLATES = {
@@ -2175,12 +2319,13 @@ _SAFETY_TEMPLATES = {
 def build_safety_response(gate, firstname):
     """Deterministic, Python-only response for sensitive categories — NO AI call."""
     template = _SAFETY_TEMPLATES.get(gate["question_type"], _SAFETY_TEMPLATES["health_sensitive"])
-    return {
-        "answer": template,
-        "answer_type": AnswerType.SAFETY_RESPONSE,
-        "question_type": gate["question_type"],
-        "used_ai": False,
-    }
+    return _unified_response(
+        answer=template,
+        answer_type=AnswerType.SAFETY_RESPONSE,
+        question_type=gate["question_type"],
+        used_ai=False,
+        can_answer_fully=False,
+    )
 
 
 def select_relevant_numerology_factors(gate, profile):
@@ -2293,13 +2438,123 @@ def post_check_answer(answer, gate):
     return True, None
 
 
+def resolve_pending_context(data):
+    """
+    If the request includes resume_context, this is a FOLLOW-UP to a
+    previous question that was missing data — not a new question. Returns
+    the resume info to act on, or None if this is a fresh question.
+    """
+    resume_context = data.get("resume_context")
+    if not resume_context or not isinstance(resume_context, dict):
+        return None
+    resume_action = resume_context.get("resume_action")
+    if not resume_action:
+        return None
+    original_question = data.get("question") or resume_context.get("original_question")
+    if not original_question:
+        return None
+    return {
+        "original_question": original_question,
+        "resume_action": resume_action,
+        "question_type": resume_context.get("question_type"),
+    }
+
+
+def answer_resumed_question(user_profile, target_profile, resumed, firstname, question):
+    """
+    Completes a previously-incomplete question now that target data has
+    arrived, WITHOUT creating a standalone reading for the target. Reuses
+    the same gate-shape/prompt/post-check pipeline as a fresh question, so
+    the target's data is never confused with the main user's own reading.
+    """
+    question_type = resumed.get("question_type") or "numerology_compatibility"
+
+    if not target_profile or not target_profile.get("numbers"):
+        # Still nothing usable even after the "resume" attempt — fall back
+        # to a fresh missing-data response rather than guessing.
+        synthetic_gate = {
+            "question_type": question_type,
+            "answer_type": AnswerType.MISSING_DATA,
+            "missing_data": ["target_name_or_dob"],
+            "pending_context": {
+                "status": "awaiting_target_data",
+                "original_question": question,
+                "target_relation": _target_relation_label(question, question_type),
+                "needed_fields": ["target_name_or_dob"],
+                "resume_action": "compare_target_with_user",
+                "question_type": question_type,
+            },
+        }
+        response = build_missing_data_response(synthetic_gate, user_profile, firstname)
+        response["resume_context_used"] = True
+        return response
+
+    if question_type in ("brand_name_resonance", "business_name_resonance"):
+        # Target is a name-only entity (brand/business), not a birth-data person
+        target_name = target_profile.get("numbers", {}).get("expression", {}).get("number")
+        name_comparison = None  # handled via comparison below using expression numbers directly
+        comparison = numerology_engine.compare_numerology_profiles(user_profile, target_profile)
+        gate = {
+            "question_type": question_type,
+            "answer_type": AnswerType.FULL_READING,
+            "can_answer_fully": True,
+            "missing_data": [],
+            "forbidden_claims": [],
+            "comparison": comparison,
+        }
+    else:
+        comparison = numerology_engine.compare_numerology_profiles(user_profile, target_profile)
+        answer_type = AnswerType.FULL_READING if not target_profile["missing_fields"] else AnswerType.PARTIAL_READING
+        gate = {
+            "question_type": question_type,
+            "answer_type": answer_type,
+            "can_answer_fully": not target_profile["missing_fields"],
+            "missing_data": target_profile["missing_fields"],
+            "forbidden_claims": [] if not target_profile["missing_fields"] else [
+                "positive/negative/neutral compatibility verdict beyond what's actually calculated"
+            ],
+            "comparison": comparison,
+        }
+
+    selected_factors = select_relevant_numerology_factors(gate, user_profile)
+    prompt = build_numerology_prompt(question, user_profile, gate, selected_factors, firstname, "")
+    answer = call_ai(prompt, temperature=0.6 if gate["can_answer_fully"] else 0.4, max_tokens=1200)
+    answer = answer.strip()
+
+    ok, violation_reason = post_check_answer(answer, gate)
+    if not ok:
+        print(f"[answer_resumed_question] post-check failed ({violation_reason})")
+        answer = (
+            f"Comparing your numbers now that I have theirs: your Life Path "
+            f"{user_profile['life_path']['number']} and their available numbers show a "
+            f"{comparison.get('overall_verdict', 'mixed')} pattern overall — "
+            f"{'a good foundation to build from' if comparison.get('overall_verdict') == 'supportive' else 'real differences worth understanding rather than a simple yes or no'}."
+        )
+
+    response = _unified_response(
+        answer=answer,
+        answer_type=gate["answer_type"],
+        question_type=question_type,
+        used_ai=True,
+        can_answer_fully=gate["can_answer_fully"],
+        missing_data=gate["missing_data"],
+        pending_context=None,
+        resume_context_used=True,
+    )
+    return response
+
+
 @app.route('/numerology-ask', methods=['POST'])
 def numerology_ask():
     try:
         data = request.get_json() or {}
+
+        # ── Accept BOTH the new {user:{}, target:{}, resume_context:{}} shape
+        # AND the old flat {name, dob} shape, so existing frontends don't break.
+        user_obj = data.get('user') or {}
+        fullname = (user_obj.get('name') or data.get('name') or "").strip()
+        dob = (user_obj.get('dob') or data.get('dob') or "").strip()
         question = (data.get('question') or "").strip()
-        fullname = (data.get('name') or "").strip()
-        dob = (data.get('dob') or "").strip()
         history = data.get('history') or []
 
         if not question or not fullname or not dob:
@@ -2307,6 +2562,19 @@ def numerology_ask():
 
         profile = numerology_engine.full_numerology_profile(fullname, dob)
         firstname = fullname.split()[0].capitalize() if fullname else "Seeker"
+        email = get_authenticated_email()
+
+        # ── RESUME CHECK — this is the actual fix. If resume_context is
+        # present, this is target data for a PREVIOUS question, not a new
+        # question about the target. Never fall through to a fresh reading.
+        resumed = resolve_pending_context(data)
+        if resumed and resumed["resume_action"] == "compare_target_with_user":
+            target = data.get('target') or {}
+            target_profile = numerology_engine.build_target_profile(target)
+            response = answer_resumed_question(profile, target_profile, resumed, firstname, resumed["original_question"])
+            log_request("numerology_ask", data=data, email=email,
+                        question=resumed["original_question"], output=response["answer"])
+            return jsonify(response)
 
         # Build prior conversation context so follow-up questions can refer
         # back to earlier answers without the person repeating themselves.
@@ -2328,17 +2596,19 @@ def numerology_ask():
                 )
 
         # ── THE GATE — decides everything before any AI call ────────────────
-        gate = build_answer_permission_gate(question, data, profile)
+        gate = build_answer_permission_gate(question, {**data, 'name': fullname}, profile)
 
         if gate["answer_type"] == AnswerType.MISSING_DATA:
             response = build_missing_data_response(gate, profile, firstname)
-            log_request("numerology_ask", data=data, email=get_authenticated_email(),
+            if email and response.get("pending_context"):
+                save_pending_context(email, response["pending_context"])
+            log_request("numerology_ask", data=data, email=email,
                         question=question, output=response["answer"])
             return jsonify(response)
 
         if gate["answer_type"] == AnswerType.SAFETY_RESPONSE:
             response = build_safety_response(gate, firstname)
-            log_request("numerology_ask", data=data, email=get_authenticated_email(),
+            log_request("numerology_ask", data=data, email=email,
                         question=question, output=response["answer"])
             return jsonify(response)
 
@@ -2362,13 +2632,17 @@ def numerology_ask():
                     f"with a bit more detail and I'll go deeper."
                 )
 
-        response = {
-            "answer": answer,
-            "answer_type": gate["answer_type"],
-            "question_type": gate["question_type"],
-            "used_ai": True,
-        }
-        log_request("numerology_ask", data=data, email=get_authenticated_email(),
+        response = _unified_response(
+            answer=answer,
+            answer_type=gate["answer_type"],
+            question_type=gate["question_type"],
+            used_ai=True,
+            can_answer_fully=gate["can_answer_fully"],
+            missing_data=gate.get("missing_data", []),
+            pending_context=None,
+            resume_context_used=False,
+        )
+        log_request("numerology_ask", data=data, email=email,
                     question=question, output=answer)
         return jsonify(response)
 
