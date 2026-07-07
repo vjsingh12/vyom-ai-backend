@@ -163,7 +163,16 @@ _NUMBER_NEUTRAL = {
     8: {1, 3, 4, 7, 9}, 9: {2, 4, 7, 8},
 }
 
-def name_resonance(full_name, dob):
+def self_name_resonance(full_name, dob):
+    """
+    Compares ONE person's own name number against their OWN Life Path number.
+
+    IMPORTANT — this is SELF-resonance only. It does NOT compare two people.
+    Do not use this for spouse/partner compatibility, business/brand name
+    resonance, child name suitability, or any two-person numerology
+    comparison — use compare_numerology_profiles() or
+    compare_name_to_user_profile() for those instead.
+    """
     lp_full = life_path_number(dob)
     expr_full = expression_number(full_name)
     lp = reduce_number(lp_full, keep_master=False)
@@ -189,6 +198,14 @@ def name_resonance(full_name, dob):
         "headline": headline,
         "note": note,
     }
+
+
+def name_resonance(full_name, dob):
+    """Backward-compatible alias for self_name_resonance(). See that
+    function's docstring — this is self-resonance only, not a two-person
+    comparison. Kept so existing callers (e.g. full_numerology_profile)
+    don't break; new code should call self_name_resonance() directly."""
+    return self_name_resonance(full_name, dob)
 
 # ── NEW STEP-BY-STEP BREAKDOWN HELPER ─────────────────────────────────────
 def name_number_breakdown(full_name):
@@ -384,3 +401,219 @@ def birth_grid_summary_for_prompt(dob):
         lines.append(f"Missing arrows: {names}")
 
     return "\n".join(lines)
+
+
+# ── DATA SUFFICIENCY & TWO-PERSON COMPARISON ───────────────────────────────
+# These functions let main.py decide WHAT can be calculated and compared
+# before any AI call happens. numerology.py calculates; it never decides
+# whether a question is "answerable" — that's main.py's job, using these
+# building blocks.
+
+RELATION_ONLY_WORDS = {
+    "wife", "husband", "partner", "spouse", "girlfriend", "boyfriend",
+    "fiance", "fiancee", "son", "daughter", "child", "baby", "mother",
+    "father", "brother", "sister", "friend", "colleague", "coworker",
+    "him", "her", "them", "someone", "person", "guy", "girl", "man", "woman",
+}
+
+# Common filler words stripped before checking if anything usable remains
+_FILLER_WORDS = {"my", "the", "a", "an", "our", "his", "her", "their", "this", "that"}
+
+
+def has_usable_name(value):
+    """
+    Return True only if `value` contains enough alphabetic content to
+    calculate name numerology, and isn't just a relation word ("my wife"),
+    a vague pronoun ("her"), or empty/whitespace.
+    """
+    if not value or not isinstance(value, str):
+        return False
+    words = [w.strip(".,!?'\"").lower() for w in value.strip().split()]
+    words = [w for w in words if w and w not in _FILLER_WORDS]
+    if not words:
+        return False
+    # Reject if EVERY remaining word is a relation-only word
+    if all(w in RELATION_ONLY_WORDS for w in words):
+        return False
+    # Must contain enough actual letters to run Pythagorean calculation on
+    letter_count = sum(1 for ch in value.upper() if ch in LETTER_VALUES)
+    return letter_count >= 2
+
+
+def has_usable_dob(value):
+    """Return True only if `value` can actually be parsed as a date."""
+    if not value:
+        return False
+    try:
+        _parse_dob(value)
+        return True
+    except Exception:
+        return False
+
+
+def partial_profile_from_available_data(name=None, dob=None, target_year=None):
+    """
+    Build ONLY the numbers that can actually be calculated from whatever
+    data is available. Never fails just because name or dob is missing —
+    that's the point: partial data still returns partial, real numbers.
+    """
+    name_ok = has_usable_name(name) if name else False
+    dob_ok = has_usable_dob(dob) if dob else False
+
+    numbers = {}
+    missing_fields = []
+    available_fields = []
+
+    if name_ok:
+        available_fields.append("name")
+        numbers["expression"] = {"number": expression_number(name), "meaning": CORE_MEANINGS.get(expression_number(name), "")}
+        numbers["soul_urge"] = {"number": soul_urge_number(name), "meaning": CORE_MEANINGS.get(soul_urge_number(name), "")}
+        numbers["personality"] = {"number": personality_number(name), "meaning": CORE_MEANINGS.get(personality_number(name), "")}
+    else:
+        missing_fields.append("name")
+
+    if dob_ok:
+        available_fields.append("dob")
+        py_year = target_year if target_year is not None else date.today().year
+        numbers["life_path"] = {"number": life_path_number(dob), "meaning": CORE_MEANINGS.get(reduce_number(life_path_number(dob)), "")}
+        numbers["birthday"] = {"number": birthday_number(dob), "meaning": CORE_MEANINGS.get(birthday_number(dob), "")}
+        numbers["personal_year"] = {"number": personal_year_number(dob, py_year), "meaning": PERSONAL_YEAR_THEMES.get(personal_year_number(dob, py_year), "")}
+    else:
+        missing_fields.append("dob")
+
+    if name_ok and dob_ok:
+        numbers["maturity"] = {"number": maturity_number(name, dob), "meaning": CORE_MEANINGS.get(maturity_number(name, dob), "")}
+
+    return {
+        "input": {"name_available": name_ok, "dob_available": dob_ok},
+        "numbers": numbers,
+        "missing_fields": missing_fields,
+        "available_fields": available_fields,
+    }
+
+
+def compare_number_pair(a, b):
+    """
+    Compare two already-reduced numbers using the friends/neutral/tension
+    tables. Returns a structured verdict, never a bare string.
+    """
+    ra = reduce_number(a, keep_master=False)
+    rb = reduce_number(b, keep_master=False)
+
+    if ra == rb or rb in _NUMBER_FRIENDS.get(ra, set()):
+        verdict = "supportive"
+        meaning = f"{a} and {b} share a natural, easy alignment."
+    elif rb in _NUMBER_NEUTRAL.get(ra, set()):
+        verdict = "mixed"
+        meaning = f"{a} and {b} sit in steady, neutral balance — neither reinforcing nor working against each other."
+    else:
+        verdict = "challenging"
+        meaning = f"{a} and {b} pull in somewhat different directions, a real but workable friction."
+
+    return {
+        "a": a, "b": b,
+        "verdict": verdict,
+        "meaning": meaning,
+        "confidence": "medium",
+    }
+
+
+def compare_numerology_profiles(user_profile, target_profile):
+    """
+    Compare two PEOPLE's numerology profiles — only when target_profile
+    actually contains usable numbers. Never invents a missing side.
+
+    user_profile: output of full_numerology_profile()
+    target_profile: output of partial_profile_from_available_data(), or None
+    """
+    if not target_profile or not target_profile.get("numbers"):
+        return {
+            "can_compare": False,
+            "comparison_type": "two_person_numerology",
+            "overall_verdict": None,
+            "confidence": "none",
+            "pairs": [],
+            "missing_fields": ["target_name_or_dob"],
+            "reason": "A second person's numerology data is required before compatibility can be judged.",
+        }
+
+    PAIR_MAP = [
+        ("life_direction", "life_path", "life_path"),
+        ("expression", "expression", "expression"),
+        ("soul_urge", "soul_urge", "soul_urge"),
+        ("personality", "personality", "personality"),
+    ]
+
+    pairs = []
+    for area, user_key, target_key in PAIR_MAP:
+        u = user_profile.get(user_key, {}).get("number")
+        t = target_profile["numbers"].get(target_key, {}).get("number")
+        if u is None or t is None:
+            continue
+        cmp = compare_number_pair(u, t)
+        pairs.append({
+            "area": area,
+            "user_number": u,
+            "target_number": t,
+            "verdict": cmp["verdict"],
+            "meaning": cmp["meaning"],
+        })
+
+    if not pairs:
+        return {
+            "can_compare": False,
+            "comparison_type": "two_person_numerology",
+            "overall_verdict": None,
+            "confidence": "none",
+            "pairs": [],
+            "missing_fields": target_profile.get("missing_fields", ["target_name_or_dob"]),
+            "reason": "Not enough overlapping numbers between both profiles to compare yet.",
+        }
+
+    verdict_counts = {"supportive": 0, "mixed": 0, "challenging": 0}
+    for p in pairs:
+        verdict_counts[p["verdict"]] += 1
+    overall_verdict = max(verdict_counts, key=verdict_counts.get)
+
+    return {
+        "can_compare": True,
+        "comparison_type": "two_person_numerology",
+        "overall_verdict": overall_verdict,
+        "confidence": "medium" if len(pairs) >= 2 else "low",
+        "pairs": pairs,
+        "missing_fields": target_profile.get("missing_fields", []),
+    }
+
+
+def compare_name_to_user_profile(target_name, user_profile, purpose="general"):
+    """
+    Compare a proposed name — business, brand, child, page, product — against
+    the user's OWN numerology profile. NOT the same as spouse/partner
+    compatibility (use compare_numerology_profiles for that).
+    """
+    if not has_usable_name(target_name):
+        return {
+            "can_compare": False,
+            "comparison_type": "target_name_to_user",
+            "target_name": target_name,
+            "reason": "No usable name was given to calculate.",
+        }
+
+    target_number = expression_number(target_name)
+    user_lp = user_profile.get("life_path", {}).get("number")
+    user_expr = user_profile.get("expression", {}).get("number")
+
+    cmp = compare_number_pair(user_lp, target_number) if user_lp is not None else None
+
+    return {
+        "can_compare": True,
+        "comparison_type": "target_name_to_user",
+        "target_name": target_name,
+        "target_name_number": target_number,
+        "user_life_path": user_lp,
+        "user_expression": user_expr,
+        "verdict": cmp["verdict"] if cmp else "unknown",
+        "confidence": cmp["confidence"] if cmp else "low",
+        "meaning": cmp["meaning"] if cmp else "",
+        "purpose": purpose,
+    }
