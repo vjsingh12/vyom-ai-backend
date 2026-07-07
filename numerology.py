@@ -492,6 +492,24 @@ def partial_profile_from_available_data(name=None, dob=None, target_year=None):
     }
 
 
+def build_target_profile(target):
+    """
+    Build a numerology profile for a SECOND person/entity only — a spouse,
+    friend, brand, business, etc. NEVER treat this as the main user's data.
+
+    target: dict with optional 'name' and/or 'dob' keys (e.g. from a
+    frontend follow-up form: {"relation": "wife", "name": "", "dob": "..."})
+    Returns None if target is empty/missing entirely.
+    """
+    if not target:
+        return None
+    name = target.get("name") or None
+    dob = target.get("dob") or None
+    if not name and not dob:
+        return None
+    return partial_profile_from_available_data(name=name, dob=dob)
+
+
 def compare_number_pair(a, b):
     """
     Compare two already-reduced numbers using the friends/neutral/tension
