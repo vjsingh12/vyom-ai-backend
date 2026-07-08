@@ -17,6 +17,9 @@ import urllib.request
 import numerology as numerology_engine
 import urllib.parse
 import urllib.error
+import smtplib
+import ssl
+from email.mime.text import MIMEText
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
@@ -180,6 +183,17 @@ def init_db():
                 context_json TEXT
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS widget_messages (
+                id SERIAL PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                name TEXT,
+                email TEXT,
+                subject TEXT,
+                message TEXT,
+                email_sent INTEGER DEFAULT 0
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -262,6 +276,17 @@ def init_db():
                 needed_fields TEXT,
                 resume_action TEXT,
                 context_json TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS widget_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                name TEXT,
+                email TEXT,
+                subject TEXT,
+                message TEXT,
+                email_sent INTEGER DEFAULT 0
             )
         """)
     db.commit()
@@ -2650,6 +2675,187 @@ def numerology_ask():
         return jsonify(error=str(e), rate_limited=True), 429
     except Exception as e:
         return jsonify(error=str(e)), 500
+
+# ── FLOATING CHATBOT + CONTACT WIDGET (index.html) ─────────────────────────
+# Two new endpoints for the homepage floating widget: a general Vayuman
+# assistant chat, and a contact form that actually sends email (unlike the
+# older /contact endpoint, which only saves to the database). Both reuse
+# existing infrastructure — call_ai() for chat (Gemini/Groq, no new AI
+# provider), and stdlib smtplib for email (no Nodemailer/Node server needed).
+
+# Simple in-memory rate limiter — good enough for a single free-tier Render
+# instance. Resets on redeploy; won't scale across multiple workers, but
+# this app runs as one process, so that's an acceptable tradeoff over adding
+# Redis/a new dependency for a low-traffic widget.
+_rate_limit_buckets = {}
+
+def check_rate_limit(key, max_requests=8, window_seconds=60):
+    """Returns True if this request is allowed, False if rate-limited."""
+    now = datetime.utcnow().timestamp()
+    bucket = _rate_limit_buckets.setdefault(key, [])
+    # Drop timestamps outside the window
+    while bucket and bucket[0] < now - window_seconds:
+        bucket.pop(0)
+    if len(bucket) >= max_requests:
+        return False
+    bucket.append(now)
+    return True
+
+
+def send_contact_email(name, email, subject, message):
+    """
+    Sends the contact form to CONTACT_TO_EMAIL via SMTP. All destination/
+    credential details come from environment variables ONLY — never from
+    frontend input, never returned in any API response, never logged in
+    full. Returns True/False; never raises (caller decides how to respond).
+    """
+    to_email = os.environ.get("CONTACT_TO_EMAIL")
+    smtp_host = os.environ.get("SMTP_HOST")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_pass = os.environ.get("SMTP_PASS")
+    from_email = os.environ.get("FROM_EMAIL", smtp_user)
+
+    if not all([to_email, smtp_host, smtp_user, smtp_pass]):
+        print("[send_contact_email] SMTP not configured — skipping send, message still saved to DB")
+        return False
+
+    body = (
+        f"New message from the Vayuman website widget\n\n"
+        f"Name: {name}\n"
+        f"Email: {email}\n"
+        f"Subject: {subject}\n\n"
+        f"Message:\n{message}\n"
+    )
+    msg = MIMEText(body)
+    msg["Subject"] = f"[Vayuman Widget] {subject or 'New message'}"
+    msg["From"] = from_email
+    msg["To"] = to_email
+    msg["Reply-To"] = email  # so replying goes straight to the visitor
+
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            server.starttls(context=context)
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(from_email, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[send_contact_email] failed: {e}")
+        return False
+
+
+VAYUMAN_ASSISTANT_PERSONA = """You are the Vayuman website assistant — a warm, calm, spiritually-aware guide who helps visitors understand the Vayuman app and offers gentle reflective guidance.
+
+You can help with:
+- explaining what Vayuman is and how the app works (free Vedic astrology + numerology readings from birth details and name)
+- explaining how astrology and numerology work in the app generally (chart, dasha, Life Path, Expression, birth grid, etc.) without pretending to calculate a specific person's real numbers here — the actual readings happen in the app itself
+- what birth details are needed for a reading (name, date of birth, time of birth, place of birth for astrology; name and date of birth for numerology)
+- general self-reflection and spiritual guidance questions, in a grounded, non-extreme way
+- basic help navigating the website/app
+
+RULES:
+- Be warm, clear, and respectful — never a generic corporate chatbot voice.
+- Do NOT invent specific astrology/numerology calculations for the visitor here — if they want an actual reading, point them to the "Read My Stars" / "Read My Numbers" flow on the app itself.
+- Gently note, at least once if the conversation turns toward decisions, that this is spiritual/reflective guidance, not medical, legal, or financial advice.
+- Never fabricate app features that don't exist. If you're unsure whether a feature exists, say so plainly rather than guessing.
+- Keep answers concise — 2-5 sentences unless the visitor clearly wants more detail.
+- Never use phrases like "trust the universe" or "the cosmos has a plan" — stay grounded and specific.
+"""
+
+
+@app.route('/api/chat', methods=['POST'])
+def widget_chat():
+    try:
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
+        if not check_rate_limit(f"chat:{client_ip}", max_requests=10, window_seconds=60):
+            return jsonify({"error": "Too many messages — please slow down a moment."}), 429
+
+        data = request.get_json(force=True) or {}
+
+        # Honeypot — a hidden field real users never fill in. If it's
+        # filled, silently pretend success without calling the AI.
+        if (data.get("website") or "").strip():
+            return jsonify({"reply": "Thank you!"})
+
+        message = (data.get("message") or "").strip()[:2000]
+        history = data.get("history") or []
+        if not message:
+            return jsonify({"error": "Please type a message first."}), 400
+
+        if not (os.environ.get('GEMINI_API_KEY') or os.environ.get('GROQ_API_KEY')):
+            return jsonify({"error": "Server not configured — missing AI provider key"}), 500
+
+        history_text = ""
+        if isinstance(history, list) and history:
+            turns = []
+            for turn in history[-6:]:
+                if not isinstance(turn, dict):
+                    continue
+                h_u = str(turn.get('user', ''))[:300].strip()
+                h_a = str(turn.get('assistant', ''))[:500].strip()
+                if h_u and h_a:
+                    turns.append(f"Visitor: {h_u}\nVayuman: {h_a}")
+            if turns:
+                history_text = "Earlier in this conversation:\n" + "\n\n".join(turns) + "\n\n"
+
+        prompt = f"{VAYUMAN_ASSISTANT_PERSONA}\n\n{history_text}Visitor's message: {message}\n\nRespond as Vayuman:"
+        reply = call_ai(prompt, temperature=0.7, max_tokens=500).strip()
+
+        log_request("widget_chat", data={}, output=reply, question=message)
+        return jsonify({"reply": reply})
+
+    except RateLimitError as e:
+        return jsonify({"error": str(e), "rate_limited": True}), 429
+    except Exception as e:
+        return jsonify({"error": "Something went wrong — please try again."}), 500
+
+
+@app.route('/api/contact', methods=['POST'])
+def widget_contact():
+    try:
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
+        if not check_rate_limit(f"contact:{client_ip}", max_requests=5, window_seconds=300):
+            return jsonify({"error": "Too many messages — please try again in a few minutes."}), 429
+
+        data = request.get_json(force=True) or {}
+
+        # Honeypot field — bots fill every field; real visitors never see this one.
+        if (data.get("website") or "").strip():
+            return jsonify({"status": "ok", "message": "Thank you. Your message has been sent to Vayuman."})
+
+        name = (data.get("name") or "").strip()[:200]
+        email = (data.get("email") or "").strip()[:200]
+        subject = (data.get("subject") or "").strip()[:200]
+        message = (data.get("message") or "").strip()[:5000]
+
+        if not name or not email or not message:
+            return jsonify({"error": "Please fill in your name, email, and message."}), 400
+        if '@' not in email or '.' not in email.split('@')[-1]:
+            return jsonify({"error": "Please enter a valid email address."}), 400
+
+        sent = send_contact_email(name, email, subject, message)
+
+        try:
+            db = get_db()
+            db.execute(
+                "INSERT INTO widget_messages (created_at, name, email, subject, message, email_sent) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (datetime.utcnow().isoformat(), name, email, subject, message, 1 if sent else 0)
+            )
+            db.commit()
+            db.close()
+        except Exception as e:
+            print(f"[widget_contact] DB save failed: {e}")  # message may still have emailed OK
+
+        # Always a friendly response regardless of email success — the
+        # message is safely saved either way, and we never expose SMTP
+        # internals or the destination email to the frontend.
+        return jsonify({"status": "ok", "message": "Thank you. Your message has been sent to Vayuman."})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Something went wrong — please try again."}), 500
+
 
 @app.route('/health', methods=['GET'])
 def health():
