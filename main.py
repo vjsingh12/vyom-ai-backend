@@ -1367,7 +1367,7 @@ def call_gemini(prompt, api_key, temperature=0.9, max_tokens=2600):
 def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
     """Call Groq's chat completion API and return the raw text response."""
     payload = json.dumps({
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-120b",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
         "max_tokens": max_tokens
