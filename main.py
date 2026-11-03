@@ -1364,6 +1364,8 @@ def call_gemini(prompt, api_key, temperature=0.9, max_tokens=2600):
         (result.get("promptFeedback") or {}).get("blockReason"),
         usage.get("candidatesTokenCount"), usage.get("thoughtsTokenCount"), max_tokens
     )
+    if candidate.get("finishReason") == "MAX_TOKENS":
+        raise RuntimeError("The AI response was incomplete. Please try again.")
 
     # Extract text from Gemini's response structure
     try:
@@ -1378,6 +1380,7 @@ def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
     """Call Groq's chat completion API and return the raw text response."""
     payload = json.dumps({
         "model": "openai/gpt-oss-120b",
+        "reasoning_effort": "low",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
         "max_tokens": max_tokens
@@ -1409,6 +1412,8 @@ def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
         "AI diagnostic provider=groq finish=%s output_tokens=%s limit=%s",
         choice.get("finish_reason"), (result.get("usage") or {}).get("completion_tokens"), max_tokens
     )
+    if choice.get("finish_reason") == "length":
+        raise RuntimeError("The AI response was incomplete. Please try again.")
     return choice["message"]["content"]
 
 
@@ -1722,7 +1727,7 @@ Tone rules:
 
 Output ONLY the tagged sections above, nothing else — no preamble, no closing remarks."""
 
-        raw_text = call_ai(prompt, temperature=0.7, max_tokens=3200)
+        raw_text = call_ai(prompt, temperature=0.7, max_tokens=6000)
 
         def extract(tag, text):
             m = re.search(rf'\[{tag}\](.*?)\[/{tag}\]', text, re.DOTALL)
