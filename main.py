@@ -1412,9 +1412,14 @@ def call_ai(prompt, temperature=0.9, max_tokens=2600):
     for prov in order:
         try:
             if prov == 'gemini' and gemini_key:
-                return call_gemini(prompt, gemini_key, temperature, max_tokens)
-            if prov == 'groq' and groq_key:
-                return call_groq(prompt, groq_key, temperature, max_tokens)
+                response = call_gemini(prompt, gemini_key, temperature, max_tokens)
+            elif prov == 'groq' and groq_key:
+                response = call_groq(prompt, groq_key, temperature, max_tokens)
+            else:
+                continue
+            if not isinstance(response, str) or not response.strip():
+                raise RuntimeError("The AI returned an empty response. Please try again.")
+            return response
         except RateLimitError as e:
             last_err = e
             continue  # try the fallback provider
@@ -2864,3 +2869,4 @@ def health():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False)
+
