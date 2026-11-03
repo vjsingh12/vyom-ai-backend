@@ -1355,6 +1355,16 @@ def call_gemini(prompt, api_key, temperature=0.9, max_tokens=2600):
                                  "Please try again in a few minutes.")
         raise
 
+    # Log response metadata only; never log keys, prompts, or generated text.
+    candidate = (result.get("candidates") or [{}])[0]
+    usage = result.get("usageMetadata") or {}
+    app.logger.warning(
+        "AI diagnostic provider=gemini model=%s finish=%s block=%s output_tokens=%s thinking_tokens=%s limit=%s",
+        GEMINI_MODEL, candidate.get("finishReason"),
+        (result.get("promptFeedback") or {}).get("blockReason"),
+        usage.get("candidatesTokenCount"), usage.get("thoughtsTokenCount"), max_tokens
+    )
+
     # Extract text from Gemini's response structure
     try:
         parts = result["candidates"][0]["content"]["parts"]
@@ -1394,7 +1404,12 @@ def call_groq(prompt, api_key, temperature=0.9, max_tokens=2600):
                                  "Please try again in a few minutes.")
         raise
 
-    return result["choices"][0]["message"]["content"]
+    choice = result["choices"][0]
+    app.logger.warning(
+        "AI diagnostic provider=groq finish=%s output_tokens=%s limit=%s",
+        choice.get("finish_reason"), (result.get("usage") or {}).get("completion_tokens"), max_tokens
+    )
+    return choice["message"]["content"]
 
 
 def call_ai(prompt, temperature=0.9, max_tokens=2600):
@@ -1422,9 +1437,11 @@ def call_ai(prompt, temperature=0.9, max_tokens=2600):
             return response
         except RateLimitError as e:
             last_err = e
+            app.logger.warning("AI diagnostic provider=%s failure=rate_limit", prov)
             continue  # try the fallback provider
         except Exception as e:
             last_err = e
+            app.logger.warning("AI diagnostic provider=%s failure=%s http_status=%s", prov, type(e).__name__, getattr(e, 'code', None))
             continue
     # If we got here, everything failed
     if isinstance(last_err, RateLimitError):
